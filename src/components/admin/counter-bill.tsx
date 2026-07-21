@@ -135,7 +135,7 @@ export function CounterBill({ menu }: { menu: MenuCategoryWithItems[] }) {
                             ? setExpanded((e) => (e === item.id ? null : item.id))
                             : add(item.id, null, item.name, item.price_paise)
                         }
-                        className="flex w-full items-center justify-between gap-3 py-3 text-left transition-transform active:scale-[0.99]"
+                        className="flex w-full items-center justify-between gap-3 rounded-lg py-3 text-left transition-transform active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
                       >
                         <span className="min-w-0">
                           <span className="block text-[15px] font-medium text-foreground">

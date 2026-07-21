@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+  type RefObject,
+} from "react";
 import { setOrderStatus, confirmCashPayment } from "@/lib/actions/order-status";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -22,6 +30,10 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [now, setNow] = useState(0);
+  const [soundOn, setSoundOn] = useState(false);
+
+  const seenIds = useRef<Set<string>>(new Set(initial.map((o) => o.id)));
+  const audioRef = useRef<AudioContext | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -34,7 +46,7 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
     }
   }, []);
 
-  // Realtime: push updates the instant any order changes (any device).
+  // Realtime push + fallback poll + focus refresh.
   useEffect(() => {
     const supabase = createClient();
     const channel = supabase
@@ -45,25 +57,18 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
         () => refresh(),
       )
       .subscribe();
-
     (async () => {
       const { data } = await supabase.auth.getSession();
       if (data.session) supabase.realtime.setAuth(data.session.access_token);
     })();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [refresh]);
-
-  // Fallback poll + refresh on tab focus.
-  useEffect(() => {
     const id = setInterval(refresh, POLL_MS);
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      supabase.removeChannel(channel);
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
@@ -79,6 +84,13 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
       clearInterval(id);
     };
   }, []);
+
+  // Chime when a genuinely new order arrives (not on optimistic edits / first load).
+  useEffect(() => {
+    const fresh = orders.filter((o) => !seenIds.current.has(o.id));
+    seenIds.current = new Set(orders.map((o) => o.id));
+    if (soundOn && fresh.length > 0) beep(audioRef);
+  }, [orders, soundOn]);
 
   const advance = useCallback(
     (order: BoardOrder, to: OrderStatus) => {
@@ -102,9 +114,7 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
       setError(null);
       setOrders((prev) =>
         prev.map((o) =>
-          o.id === order.id
-            ? { ...o, payment_status: "paid", status: "new" }
-            : o,
+          o.id === order.id ? { ...o, payment_status: "paid", status: "new" } : o,
         ),
       );
       startTransition(async () => {
@@ -116,49 +126,116 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
     [refresh],
   );
 
-  // Cleared (paid) first, then cash-awaiting; oldest first within each group.
-  const sorted = useMemo(
-    () =>
-      [...orders].sort((a, b) => {
-        const ca = a.payment_status === "paid" ? 0 : 1;
-        const cb = b.payment_status === "paid" ? 0 : 1;
-        if (ca !== cb) return ca - cb;
-        return (
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-      }),
-    [orders],
-  );
+  const groups = useMemo(() => {
+    const byAge = (a: BoardOrder, b: BoardOrder) =>
+      new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    const paid = (o: BoardOrder) => o.payment_status === "paid";
+    return {
+      awaiting: orders.filter((o) => !paid(o)).sort(byAge),
+      toMake: orders.filter((o) => paid(o) && o.status === "new").sort(byAge),
+      ready: orders.filter((o) => paid(o) && o.status === "ready").sort(byAge),
+    };
+  }, [orders]);
 
-  if (sorted.length === 0) {
-    return (
-      <div className="rounded-2xl border border-dashed border-border-strong bg-surface px-6 py-16 text-center">
-        <p className="text-base font-medium text-foreground">No active orders</p>
-        <p className="mx-auto mt-1.5 max-w-xs text-sm text-muted">
-          Paid orders and cash orders awaiting payment land here automatically.
-        </p>
-      </div>
-    );
+  const total = orders.length;
+
+  function renderCards(list: BoardOrder[]) {
+    return list.map((order) => (
+      <OrderCard
+        key={order.id}
+        order={order}
+        now={now}
+        busy={pending}
+        onAdvance={advance}
+        onCashReceived={cashReceived}
+      />
+    ));
   }
 
   return (
-    <div className="space-y-3">
+    <div>
+      <div className="mb-3 flex items-center justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            setSoundOn((v) => {
+              const next = !v;
+              if (next) ensureAudio(audioRef); // unlock audio on the gesture
+              return next;
+            });
+          }}
+          aria-pressed={soundOn}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs font-medium text-muted transition-colors hover:text-foreground"
+        >
+          {soundOn ? <SpeakerOn /> : <SpeakerOff />}
+          {soundOn ? "Sound on" : "Sound off"}
+        </button>
+      </div>
+
       {error && (
-        <p className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">
+        <p className="mb-3 rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">
           {error}
         </p>
       )}
-      {sorted.map((order) => (
-        <OrderCard
-          key={order.id}
-          order={order}
-          now={now}
-          busy={pending}
-          onAdvance={advance}
-          onCashReceived={cashReceived}
-        />
-      ))}
+
+      {total === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border-strong bg-surface px-6 py-16 text-center">
+          <p className="text-base font-medium text-foreground">No active orders</p>
+          <p className="mx-auto mt-1.5 max-w-xs text-sm text-muted">
+            Paid orders and cash orders awaiting payment land here automatically.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groups.awaiting.length > 0 && (
+            <Section title="Awaiting cash" count={groups.awaiting.length}>
+              {renderCards(groups.awaiting)}
+            </Section>
+          )}
+          {groups.toMake.length > 0 && (
+            <Section title="To make" count={groups.toMake.length}>
+              {renderCards(groups.toMake)}
+            </Section>
+          )}
+          {groups.ready.length > 0 && (
+            <Section title="Ready" count={groups.ready.length} tone="success">
+              {renderCards(groups.ready)}
+            </Section>
+          )}
+        </div>
+      )}
     </div>
+  );
+}
+
+function Section({
+  title,
+  count,
+  tone,
+  children,
+}: {
+  title: string;
+  count: number;
+  tone?: "success";
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div className="mb-2 flex items-center gap-2 px-1">
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <span
+          className={cn(
+            "grid min-w-5 place-items-center rounded-full px-1.5 text-xs font-bold tabular-nums",
+            tone === "success"
+              ? "bg-success-bg text-success"
+              : "bg-surface-2 text-muted",
+          )}
+        >
+          {count}
+        </span>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </section>
   );
 }
 
@@ -176,7 +253,7 @@ function OrderCard({
   onCashReceived: (order: BoardOrder) => void;
 }) {
   const cleared = order.payment_status === "paid";
-  const cashPending = !cleared; // board only holds paid-active + cash-awaiting
+  const cashPending = !cleared;
   const stale =
     cashPending && now - new Date(order.created_at).getTime() > STALE_MS;
   const meta = STATUS_META[order.status];
@@ -219,9 +296,7 @@ function OrderCard({
             )}
           </p>
         </div>
-        <span className="shrink-0 text-xs text-muted">
-          {timeAgo(order.created_at, now)}
-        </span>
+        <span className="shrink-0 text-xs text-muted">{timeAgo(order.created_at, now)}</span>
       </div>
 
       <ul className="mt-3 space-y-1">
@@ -247,17 +322,12 @@ function OrderCard({
               if (window.confirm(`Cancel ${label}?`)) onAdvance(order, "cancelled");
             }}
             disabled={busy}
-            className="rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-danger-bg hover:text-danger disabled:opacity-50"
+            className="rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-danger-bg hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/40 disabled:opacity-50"
           >
             Cancel
           </button>
           {cashPending ? (
-            <Button
-              size="sm"
-              variant="accent"
-              onClick={() => onCashReceived(order)}
-              disabled={busy}
-            >
+            <Button size="sm" variant="accent" onClick={() => onCashReceived(order)} disabled={busy}>
               Cash received
             </Button>
           ) : (
@@ -283,6 +353,54 @@ function timeAgo(iso: string, now: number): string {
   const mins = Math.floor(diffMs / 60000);
   if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  return `${hours}h ago`;
+  return `${Math.floor(mins / 60)}h ago`;
+}
+
+function ensureAudio(ref: RefObject<AudioContext | null>): AudioContext | null {
+  try {
+    if (!ref.current && typeof window !== "undefined" && window.AudioContext) {
+      ref.current = new window.AudioContext();
+    }
+    if (ref.current?.state === "suspended") void ref.current.resume();
+    return ref.current;
+  } catch {
+    return null;
+  }
+}
+
+function beep(ref: RefObject<AudioContext | null>) {
+  const ctx = ensureAudio(ref);
+  if (!ctx) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.25);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.26);
+  } catch {
+    // ignore audio errors
+  }
+}
+
+function SpeakerOn() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M11 5 6 9H2v6h4l5 4V5z" />
+      <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" />
+    </svg>
+  );
+}
+function SpeakerOff() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M11 5 6 9H2v6h4l5 4V5z" />
+      <path d="M22 9l-6 6M16 9l6 6" />
+    </svg>
+  );
 }
