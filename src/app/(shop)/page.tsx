@@ -1,6 +1,5 @@
 import { getMenu } from "@/lib/menu";
 import { getActiveOrder } from "@/lib/customer-order";
-import { CustomerHero } from "@/components/customer-hero";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { MenuBrowser } from "@/components/menu-browser";
 import { ActiveOrderBar } from "@/components/cart/active-order-bar";
@@ -17,20 +16,16 @@ export default async function MenuPage() {
       {/* Live menu: sold-out / price / size changes appear instantly. */}
       <RealtimeRefresh table="menu_items" channel="menu" />
       <RealtimeRefresh table="menu_item_variants" channel="menu-variants" />
-      <CustomerHero />
 
-      <main className="relative z-10 -mt-5 flex-1 rounded-t-[1.75rem] bg-background pb-28 pt-1">
-        {hasMenu ? (
-          <MenuBrowser categories={menu.categories} />
-        ) : (
+      {hasMenu ? (
+        <MenuBrowser categories={menu.categories} />
+      ) : (
+        <main className="flex-1 bg-background pb-28 pt-7">
           <div className="mx-auto max-w-lg px-6 pt-7">
             <MenuEmptyState configured={menu.configured} />
           </div>
-        )}
-        <p className="mx-auto mt-12 max-w-lg px-6 text-center text-xs text-muted">
-          Pay by UPI or cash · called by number when it&rsquo;s ready
-        </p>
-      </main>
+        </main>
+      )}
     </div>
   );
 }
