@@ -64,7 +64,7 @@ export default async function OrderPage({
 
   return (
     <div className="flex min-h-full flex-col">
-      <AutoRefresh intervalMs={2500} stop={done} />
+      <AutoRefresh intervalMs={5000} stop={done} />
 
       <header className="bg-primary-deep text-on-primary">
         <div className="mx-auto flex max-w-lg items-center gap-2.5 px-5 py-4">

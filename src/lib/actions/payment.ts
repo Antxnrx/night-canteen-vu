@@ -1,47 +1,61 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { verifyCheckoutSignature } from "@/lib/razorpay";
+import { fetchCashfreeOrder } from "@/lib/cashfree";
 import { markOrderPaid } from "@/lib/payments";
 
-export type VerifyPaymentInput = {
-  orderId: string;
-  razorpayOrderId: string;
-  razorpayPaymentId: string;
-  razorpaySignature: string;
-};
+export type VerifyPaymentResult = { ok: boolean; error?: string };
 
 /**
- * Verifies a Razorpay checkout success from the browser. The signature is HMAC'd
- * with the server-only key secret, so a forged callback can't pass. On success
- * the order is marked paid (idempotent — the webhook may also confirm it).
+ * Confirms a payment after the customer returns from Cashfree checkout.
+ *
+ * Cashfree has no client-side signature to check, which turns out to be the
+ * safer shape: nothing the browser sends is trusted at all. The browser only
+ * tells us *when* to look — the answer comes from Cashfree's API, server to
+ * server, keyed on our own order id.
+ *
+ * Three things must hold before an order is marked paid: Cashfree says PAID,
+ * the currency is INR, and the amount matches the total we computed. The last
+ * one is what stops a tampered or stale session from paying ₹1 for a ₹400 order.
+ *
+ * The webhook performs the identical checks; whichever arrives first wins, and
+ * markOrderPaid is idempotent.
  */
 export async function verifyPayment(
-  input: VerifyPaymentInput,
-): Promise<{ ok: boolean; error?: string }> {
-  const { orderId, razorpayOrderId, razorpayPaymentId, razorpaySignature } =
-    input ?? {};
-  if (!orderId || !razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
-    return { ok: false, error: "Missing payment details." };
-  }
+  orderId: string,
+): Promise<VerifyPaymentResult> {
+  if (!orderId) return { ok: false, error: "Missing order." };
 
-  if (
-    !verifyCheckoutSignature(razorpayOrderId, razorpayPaymentId, razorpaySignature)
-  ) {
-    return { ok: false, error: "Payment could not be verified." };
-  }
-
-  // The signed Razorpay order must match the one we created for this order.
   const supabase = createAdminClient();
   const { data: order } = await supabase
     .from("orders")
-    .select("id,razorpay_order_id")
+    .select("id,total_paise,payment_status")
     .eq("id", orderId)
     .maybeSingle();
-  if (!order || order.razorpay_order_id !== razorpayOrderId) {
-    return { ok: false, error: "This payment doesn't match your order." };
+
+  if (!order) return { ok: false, error: "We couldn't find that order." };
+  if (order.payment_status === "paid") return { ok: true }; // webhook beat us
+
+  const remote = await fetchCashfreeOrder(orderId);
+  if (!remote) {
+    return {
+      ok: false,
+      error: "We couldn't reach the payment provider. Check your order page in a moment.",
+    };
   }
 
-  await markOrderPaid(orderId, razorpayPaymentId);
+  if (remote.orderStatus !== "PAID") {
+    return { ok: false, error: "Payment wasn't completed." };
+  }
+  if (remote.currency !== "INR" || remote.amountPaise !== order.total_paise) {
+    console.error(
+      `PAYMENT AMOUNT MISMATCH on order ${orderId}: ` +
+        `expected ${order.total_paise} paise INR, ` +
+        `Cashfree reported ${remote.amountPaise} paise ${remote.currency}`,
+    );
+    return { ok: false, error: "Payment amount didn't match this order." };
+  }
+
+  await markOrderPaid(orderId, null);
   return { ok: true };
 }

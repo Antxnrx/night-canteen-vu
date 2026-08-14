@@ -3,38 +3,53 @@
 import { useState } from "react";
 import { AddToCart } from "@/components/cart/add-to-cart";
 import { SizePicker } from "@/components/cart/size-picker";
+import { SkyScene } from "@/components/sky-scene";
 import { formatPaise } from "@/lib/format";
 import { cn } from "@/lib/cn";
+import { isDaylight, type Sky } from "@/lib/sky-types";
 import type { MenuCategoryWithItems, MenuItem } from "@/lib/menu";
 
-const HERO_PALETTES = [
-  {
-    background:
-      "linear-gradient(142deg, #080d1f 0%, #18294a 42%, #b96d35 145%)",
-    glow: "radial-gradient(circle, rgba(255, 192, 112, 0.9) 0%, rgba(242, 155, 70, 0.28) 38%, transparent 70%)",
-  },
-  {
-    background:
-      "linear-gradient(140deg, #170d28 0%, #45205d 47%, #e18c47 150%)",
-    glow: "radial-gradient(circle, rgba(255, 210, 132, 0.88) 0%, rgba(233, 133, 81, 0.28) 38%, transparent 70%)",
-  },
-  {
-    background:
-      "linear-gradient(140deg, #062126 0%, #0f5960 48%, #e5a34b 145%)",
-    glow: "radial-gradient(circle, rgba(255, 221, 134, 0.88) 0%, rgba(247, 168, 67, 0.24) 38%, transparent 70%)",
-  },
-  {
-    background:
-      "linear-gradient(140deg, #211109 0%, #6c3020 48%, #e6ae59 150%)",
-    glow: "radial-gradient(circle, rgba(255, 230, 155, 0.86) 0%, rgba(250, 165, 65, 0.25) 38%, transparent 70%)",
-  },
+/**
+ * Per-category colour, layered OVER the sky rather than replacing it.
+ *
+ * The sky says what time it is and whether it's raining; these say which part
+ * of the menu you're looking at. Both are true at once, so both are drawn: the
+ * tints are translucent and cross-fade in over whatever the sky is doing, so a
+ * rainy night stays a rainy night while Pizzas still turns the hero red.
+ *
+ * Indexed by category order, so adding a category on the admin menu picks up a
+ * colour automatically.
+ */
+const CATEGORY_TINTS = [
+  { wash: "rgba(23, 138, 148, 0.52)", glow: "rgba(120, 235, 235, 0.55)" }, // teal
+  { wash: "rgba(178, 72, 36, 0.52)", glow: "rgba(255, 178, 104, 0.55)" }, // ember
+  { wash: "rgba(46, 112, 62, 0.50)", glow: "rgba(160, 231, 150, 0.50)" }, // herb
+  { wash: "rgba(150, 96, 30, 0.52)", glow: "rgba(255, 208, 130, 0.55)" }, // amber
+  { wash: "rgba(150, 40, 48, 0.54)", glow: "rgba(255, 150, 130, 0.55)" }, // tomato
+  { wash: "rgba(158, 122, 24, 0.50)", glow: "rgba(255, 226, 128, 0.55)" }, // yolk
+  { wash: "rgba(139, 84, 22, 0.52)", glow: "rgba(255, 197, 110, 0.55)" }, // fries
 ] as const;
 
-/** Customer menu in a rounded sheet that scrolls over a category-aware backdrop. */
+/** The kitchen is open 11:00 → midnight, so the greeting has to work all day. */
+const HEADLINES: Record<Sky["phase"], string> = {
+  morning: "Open, and the kettle's on.",
+  afternoon: "Hot food, all afternoon.",
+  golden: "Evening orders are open.",
+  night: "Fresh after dark.",
+};
+
+/**
+ * Customer menu in a rounded sheet that scrolls over the sky outside.
+ * The backdrop follows the time of day in Kolkata and the weather over campus
+ * (see `lib/sky.ts`) rather than the selected category — opening the app at 3pm
+ * in the rain should look nothing like opening it at midnight.
+ */
 export function MenuBrowser({
   categories,
+  sky,
 }: {
   categories: MenuCategoryWithItems[];
+  sky: Sky;
 }) {
   const [selected, setSelected] = useState<string>("all");
   const selectedCategory = categories.find((category) => category.id === selected);
@@ -42,27 +57,52 @@ export function MenuBrowser({
     selected === "all"
       ? categories
       : categories.filter((c) => c.id === selected);
-  const paletteIndex =
-    selected === "all"
-      ? 0
-      : Math.max(
-          1,
-          (categories.findIndex((category) => category.id === selected) + 1) %
-            HERO_PALETTES.length,
-        );
-  const palette = HERO_PALETTES[paletteIndex];
+  const daylight = isDaylight(sky.phase);
+
+  const categoryIndex = categories.findIndex((c) => c.id === selected);
+  const tint =
+    categoryIndex >= 0
+      ? CATEGORY_TINTS[categoryIndex % CATEGORY_TINTS.length]
+      : null;
 
   return (
     <div className="relative min-h-full">
       <header
-        className="sticky top-0 h-[min(62svh,31rem)] min-h-[23rem] overflow-hidden text-on-primary"
-        style={{ background: palette.background }}
+        className="sticky top-0 h-[min(62svh,31rem)] min-h-[23rem] overflow-hidden text-on-primary transition-[background] duration-700"
+        style={{ background: sky.background }}
       >
+        <SkyScene condition={sky.condition} stars={sky.stars} />
+
+        {/* Category wash over the sky. Keyed so each pick cross-fades in. */}
+        {tint && (
+          <div
+            key={`wash-${selected}`}
+            aria-hidden
+            className="absolute inset-0 animate-[nc-fade-in_0.7s_var(--ease-out-quart)_both]"
+            style={{
+              background: `linear-gradient(150deg, transparent 0%, ${tint.wash} 115%)`,
+            }}
+          />
+        )}
+
+        {/* Sun / moon glow — always present. */}
         <div
           aria-hidden
           className="absolute -right-24 top-8 size-80 rounded-full blur-3xl transition-opacity duration-500"
-          style={{ background: palette.glow }}
+          style={{ background: sky.glow }}
         />
+
+        {/* Category glow, layered on top of the sky's own. */}
+        {tint && (
+          <div
+            key={`glow-${selected}`}
+            aria-hidden
+            className="absolute -left-16 top-24 size-72 rounded-full blur-3xl animate-[nc-fade-in_0.9s_var(--ease-out-quart)_both]"
+            style={{
+              background: `radial-gradient(circle, ${tint.glow} 0%, transparent 68%)`,
+            }}
+          />
+        )}
         <div
           aria-hidden
           className="absolute -bottom-28 -left-20 size-72 rounded-full border border-white/10 bg-white/5"
@@ -74,15 +114,31 @@ export function MenuBrowser({
 
         <div className="relative mx-auto flex h-full max-w-lg flex-col px-6 pb-36 pt-[max(1.5rem,env(safe-area-inset-top))]">
           <div className="flex items-center gap-2.5">
+            {/* Sun by day, the brand moon after dark — tinted to match the sky. */}
             <span className="grid size-9 place-items-center rounded-full border border-white/15 bg-white/10 shadow-sm backdrop-blur-sm">
-              <svg
-                viewBox="0 0 24 24"
-                className="size-5 text-accent"
-                fill="currentColor"
-                aria-hidden
-              >
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
-              </svg>
+              {daylight ? (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-5"
+                  fill="none"
+                  stroke={sky.orb}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  aria-hidden
+                >
+                  <circle cx="12" cy="12" r="4.2" fill={sky.orb} stroke="none" />
+                  <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M18.7 5.3l-1.4 1.4M6.7 17.3l-1.4 1.4" />
+                </svg>
+              ) : (
+                <svg
+                  viewBox="0 0 24 24"
+                  className="size-5"
+                  fill={sky.orb}
+                  aria-hidden
+                >
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+                </svg>
+              )}
             </span>
             <span
               title="crafted by Megh Vyas"
@@ -93,19 +149,20 @@ export function MenuBrowser({
           </div>
 
           <div className="mt-auto max-w-sm">
+            {/* The sky's own words — "Rainy afternoon", not a clock reading. */}
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-on-primary/65">
-              {selected === "all" ? "Tonight's menu" : "Now viewing"}
+              {selected === "all" ? sky.label : "Now viewing"}
             </p>
             <h1
               key={selected}
               className="mt-2 text-balance font-display text-4xl font-semibold leading-[1.05] tracking-tight animate-enter"
             >
-              {selectedCategory?.name ?? "Fresh after dark."}
+              {selectedCategory?.name ?? HEADLINES[sky.phase]}
             </h1>
             <p className="mt-3 text-sm leading-relaxed text-on-primary/75">
               {selectedCategory
                 ? `A closer look at our ${selectedCategory.name.toLowerCase()}.`
-                : "Late-night bites and pours, ready when you are."}
+                : "Order from your phone, skip the queue."}
             </p>
           </div>
         </div>

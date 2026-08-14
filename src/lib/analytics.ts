@@ -20,19 +20,35 @@ type OrderRow = {
   order_items: { name_snapshot: string; quantity: number; line_total_paise: number }[];
 };
 
+/**
+ * IST is a fixed +5:30 from UTC and India observes no DST, so a constant offset
+ * is exact rather than an approximation.
+ */
+const IST_OFFSET_MS = 5.5 * 3600_000;
+
+/** The UTC instant at which the IST day `daysAgo` days back began. */
+function istDayStart(daysAgo = 0): Date {
+  const ist = new Date(Date.now() + IST_OFFSET_MS);
+  ist.setUTCHours(0, 0, 0, 0);
+  ist.setUTCDate(ist.getUTCDate() - daysAgo);
+  return new Date(ist.getTime() - IST_OFFSET_MS);
+}
+
+/** IST calendar date (YYYY-MM-DD) for an instant — the day-bucket key. */
+function istDateKey(at: Date): string {
+  return new Date(at.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Range boundaries in IST, not in the server's timezone.
+ *
+ * Vercel runs in UTC, so computing "today" from local midnight put the boundary
+ * at 05:30 IST. For a canteen whose service runs past midnight that reported
+ * ₹0 for the whole of the previous night's takings the next morning.
+ */
 function sinceFor(range: Range): string | null {
-  const now = new Date();
-  if (range === "today") {
-    const d = new Date(now);
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString();
-  }
-  if (range === "7d") {
-    const d = new Date(now);
-    d.setDate(d.getDate() - 6);
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString();
-  }
+  if (range === "today") return istDayStart(0).toISOString();
+  if (range === "7d") return istDayStart(6).toISOString();
   return null;
 }
 
@@ -70,21 +86,22 @@ export async function getAnalytics(range: Range): Promise<Analytics> {
   const itemMap = new Map<string, { qty: number; revenuePaise: number }>();
   const salesByHour = new Array(24).fill(0) as number[];
 
-  // last 7 days buckets (IST), oldest → newest
+  // last 7 IST days, oldest → newest. Key and label both come from IST, so a
+  // sale at 00:30 IST lands under the day the staff would call it.
   const dayBuckets = new Map<string, { label: string; revenuePaise: number }>();
   for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    dayBuckets.set(key, { label: IST_DAY.format(d), revenuePaise: 0 });
+    const dayStart = istDayStart(i);
+    dayBuckets.set(istDateKey(dayStart), {
+      label: IST_DAY.format(dayStart),
+      revenuePaise: 0,
+    });
   }
 
   for (const o of orders) {
     const when = new Date(o.paid_at ?? o.created_at);
     salesByHour[Number(IST_HOUR.format(when))] += o.total_paise ?? 0;
 
-    const dayKey = when.toISOString().slice(0, 10);
-    const bucket = dayBuckets.get(dayKey);
+    const bucket = dayBuckets.get(istDateKey(when));
     if (bucket) bucket.revenuePaise += o.total_paise ?? 0;
 
     for (const it of o.order_items ?? []) {

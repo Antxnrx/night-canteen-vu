@@ -14,15 +14,19 @@ export function LoginForm({ next }: { next?: string }) {
     <form action={formAction} className="space-y-4">
       {next && <input type="hidden" name="next" value={next} />}
 
-      <Field label="Email" htmlFor="email">
+      <Field label="Username" htmlFor="username">
         <Input
-          id="email"
-          name="email"
-          type="email"
+          id="username"
+          name="username"
+          type="text"
           autoComplete="username"
-          inputMode="email"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           required
-          placeholder="you@nightcanteen.in"
+          // No example username here — a placeholder on a public login page
+          // hands a real account name to anyone who loads it.
+          placeholder="Your username"
         />
       </Field>
 

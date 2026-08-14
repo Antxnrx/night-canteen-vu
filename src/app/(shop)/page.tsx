@@ -1,5 +1,6 @@
 import { getMenu } from "@/lib/menu";
 import { getActiveOrder } from "@/lib/customer-order";
+import { getSky } from "@/lib/sky";
 import { RealtimeRefresh } from "@/components/realtime-refresh";
 import { MenuBrowser } from "@/components/menu-browser";
 import { ActiveOrderBar } from "@/components/cart/active-order-bar";
@@ -7,7 +8,11 @@ import { ActiveOrderBar } from "@/components/cart/active-order-bar";
 export const dynamic = "force-dynamic";
 
 export default async function MenuPage() {
-  const [menu, activeOrder] = await Promise.all([getMenu(), getActiveOrder()]);
+  const [menu, activeOrder, sky] = await Promise.all([
+    getMenu(),
+    getActiveOrder(),
+    getSky(),
+  ]);
   const hasMenu = menu.categories.length > 0;
 
   return (
@@ -18,7 +23,7 @@ export default async function MenuPage() {
       <RealtimeRefresh table="menu_item_variants" channel="menu-variants" />
 
       {hasMenu ? (
-        <MenuBrowser categories={menu.categories} />
+        <MenuBrowser categories={menu.categories} sky={sky} />
       ) : (
         <main className="flex-1 bg-background pb-28 pt-7">
           <div className="mx-auto max-w-lg px-6 pt-7">

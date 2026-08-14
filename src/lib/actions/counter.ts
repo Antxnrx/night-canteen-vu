@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getCurrentAdmin } from "@/lib/admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { logAudit } from "@/lib/audit";
+import { assignOrderNumber } from "@/lib/payments";
 import { priceLines, type RawLine } from "@/lib/pricing";
 
 export type StaffOrderInput = {
@@ -45,9 +46,6 @@ export async function createStaffOrder(
   if (!priced.ok) return { error: priced.error };
   const total = priced.subtotalPaise;
 
-  const { data: num } = await supabase.rpc("next_daily_order_number");
-  const orderNumber = typeof num === "number" ? num : null;
-
   const { data: order, error: orderErr } = await supabase
     .from("orders")
     .insert({
@@ -60,7 +58,6 @@ export async function createStaffOrder(
       source: "counter",
       subtotal_paise: total,
       total_paise: total,
-      daily_order_number: orderNumber,
       paid_at: new Date().toISOString(),
     })
     .select("id")
@@ -76,6 +73,10 @@ export async function createStaffOrder(
     await supabase.from("orders").delete().eq("id", order.id);
     return { error: "Couldn't create the bill. Please try again." };
   }
+
+  // Number last: a failed insert above would otherwise burn a number and leave
+  // a gap in the night's sequence.
+  const orderNumber = await assignOrderNumber(supabase, order.id);
 
   await logAudit(admin.supabase, {
     actorId: admin.user.id,

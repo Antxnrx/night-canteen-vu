@@ -3,10 +3,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureSession } from "@/lib/session";
-import { isSupabaseConfigured, isRazorpayConfigured } from "@/lib/env";
-import { createRazorpayOrder, razorpayKeyId } from "@/lib/razorpay";
+import { isSupabaseConfigured, isCashfreeConfigured } from "@/lib/env";
+import { env } from "@/lib/env";
+import { createCashfreeOrder, fetchCashfreeOrder } from "@/lib/cashfree";
 import { getStoreOpen } from "@/lib/store";
 import { priceLines } from "@/lib/pricing";
+import { allow, clientIp } from "@/lib/rate-limit";
+import { getSession } from "@/lib/session";
 
 export type CreateOrderInput = {
   items: { id: string; variantId?: string | null; qty: number }[];
@@ -22,17 +25,19 @@ export type CreateOrderResult =
   | { cash: true; orderId: string }
   | {
       orderId: string;
-      razorpayOrderId: string;
+      /** Handed to the Cashfree JS SDK to open checkout. */
+      paymentSessionId: string;
       amountPaise: number;
-      keyId: string;
-      customerName: string;
-      phone: string | null;
+      mode: "sandbox" | "production";
     };
 
 /**
- * Creates (or re-uses, for retries) a pending order + its Razorpay order.
+ * Creates (or re-uses, for retries) a pending order + its Cashfree order.
  * ALL pricing is recomputed server-side; the client only sends ids + quantities.
  * Idempotent on `idempotencyKey`, so a retry re-opens payment for the same order.
+ *
+ * Our order UUID is also Cashfree's `order_id`, so payment can always be looked
+ * up later without storing a second identifier.
  */
 export async function createOrder(
   input: CreateOrderInput,
@@ -43,7 +48,7 @@ export async function createOrder(
 
   const method: "upi" | "cash" =
     input.paymentMethod === "cash" ? "cash" : "upi";
-  if (method === "upi" && !isRazorpayConfigured()) {
+  if (method === "upi" && !isCashfreeConfigured()) {
     return { error: "UPI payments aren't set up yet. Please try again soon." };
   }
 
@@ -52,6 +57,7 @@ export async function createOrder(
       error: "The canteen just closed — you can't place an order right now.",
     };
   }
+
 
   const name = (input.name ?? "").trim();
   if (!name) return { error: "Please enter your name." };
@@ -81,17 +87,41 @@ export async function createOrder(
       if (existing.payment_method === "cash") {
         return { cash: true, orderId: existing.id };
       }
-      const rzpId = await ensureRazorpayOrder(supabase, existing.id, existing.razorpay_order_id, existing.total_paise);
-      if (!rzpId) return { error: "Couldn't start the payment. Please try again." };
+      const session = await ensurePaymentSession(supabase, {
+        orderId: existing.id,
+        alreadyCreated: Boolean(existing.razorpay_order_id),
+        amountPaise: existing.total_paise,
+        customerName: existing.customer_name,
+        customerPhone: existing.customer_phone ?? phone,
+      });
+      if (!session) {
+        return { error: "Couldn't start the payment. Please try again." };
+      }
       return {
         orderId: existing.id,
-        razorpayOrderId: rzpId,
+        paymentSessionId: session,
         amountPaise: existing.total_paise,
-        keyId: razorpayKeyId(),
-        customerName: existing.customer_name,
-        phone: existing.customer_phone,
+        mode: env.cashfreeEnv,
       };
     }
+  }
+
+  // Past the retry path, so this only ever counts genuinely NEW orders — a
+  // customer re-opening payment on bad wifi reuses their idempotency key above
+  // and is never the one who gets throttled.
+  //
+  // Cash orders reach the board without any payment, so without a limit one
+  // person can bury the kitchen in junk. Keyed on the session where there is
+  // one, otherwise the IP: a fresh session per request would defeat the first
+  // bucket on its own.
+  const existingSession = await getSession();
+  const bucket = existingSession
+    ? `order:s:${existingSession.id}`
+    : `order:ip:${await clientIp()}`;
+  if (!(await allow(bucket, 8, 300))) {
+    return {
+      error: "That's a lot of orders at once. Give it a minute, then try again.",
+    };
   }
 
   // Server-side pricing (shared with counter billing).
@@ -156,35 +186,71 @@ export async function createOrder(
     return { cash: true, orderId: order.id };
   }
 
-  const rzpId = await ensureRazorpayOrder(supabase, order.id, null, total);
-  if (!rzpId) {
+  const paymentSession = await ensurePaymentSession(supabase, {
+    orderId: order.id,
+    alreadyCreated: false,
+    amountPaise: total,
+    customerName: name,
+    customerPhone: phone,
+  });
+  if (!paymentSession) {
     // Order persists as pending; a retry (same key) will re-attempt payment.
     return { error: "Couldn't start the payment. Please try again." };
   }
 
   return {
     orderId: order.id,
-    razorpayOrderId: rzpId,
+    paymentSessionId: paymentSession,
     amountPaise: total,
-    keyId: razorpayKeyId(),
-    customerName: name,
-    phone,
+    mode: env.cashfreeEnv,
   };
 }
 
-/** Returns the order's Razorpay order id, creating + storing it if needed. */
-async function ensureRazorpayOrder(
+/**
+ * Returns a usable Cashfree payment session for this order.
+ *
+ * A payment session expires, so a retry can't just replay the old one — but the
+ * Cashfree order itself still exists and its id is our order UUID, so fetching
+ * it yields a fresh session. Only when no Cashfree order exists yet do we
+ * create one (creating twice with the same order_id is rejected).
+ *
+ * NOTE ON THE COLUMN NAME: `razorpay_order_id` is reused as the "a payment
+ * order exists for this row" marker. Renaming it would mean a schema change,
+ * which was explicitly off the table for this launch. It holds a Cashfree
+ * identifier despite the name.
+ */
+async function ensurePaymentSession(
   supabase: SupabaseClient,
-  orderId: string,
-  existingRazorpayOrderId: string | null,
-  amountPaise: number,
+  params: {
+    orderId: string;
+    alreadyCreated: boolean;
+    amountPaise: number;
+    customerName: string;
+    customerPhone: string;
+  },
 ): Promise<string | null> {
-  if (existingRazorpayOrderId) return existingRazorpayOrderId;
-  const rzp = await createRazorpayOrder(amountPaise, orderId);
-  if (!rzp) return null;
+  if (params.alreadyCreated) {
+    const remote = await fetchCashfreeOrder(params.orderId);
+    if (remote?.paymentSessionId) return remote.paymentSessionId;
+    // Order exists but is no longer payable (expired/terminated) — nothing to
+    // resume, and re-creating under the same id would be rejected.
+    return null;
+  }
+
+  const created = await createCashfreeOrder({
+    orderId: params.orderId,
+    amountPaise: params.amountPaise,
+    // Cashfree requires a customer id; our order id is stable and unique.
+    customerId: params.orderId,
+    customerName: params.customerName,
+    customerPhone: params.customerPhone,
+  });
+  if (!created) return null;
+
   await supabase
     .from("orders")
-    .update({ razorpay_order_id: rzp.id })
-    .eq("id", orderId);
-  return rzp.id;
+    .update({ razorpay_order_id: created.cfOrderId || params.orderId })
+    .eq("id", params.orderId);
+
+  return created.paymentSessionId;
 }

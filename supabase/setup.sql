@@ -1,8 +1,13 @@
--- ============================================================
--- Night Canteen — one-paste setup (all migrations + seed)
--- Paste this whole file into the Supabase SQL Editor and press Run.
--- Safe to re-run (idempotent).
--- ============================================================
+-- ============================================================================
+-- setup.sql — GENERATED FILE. Do not edit by hand.
+--
+-- Every migration plus the seed, concatenated in order. Paste the whole file
+-- into the Supabase SQL editor and run it once. Safe to re-run: every
+-- statement is idempotent.
+--
+-- Regenerate with:  node scripts/build-setup-sql.mjs
+-- Contains: 0001_menu.sql, 0002_admin.sql, 0003_orders.sql, 0004_payment.sql, 0005_ops.sql, 0006_variants.sql, 0007_counter.sql, 0008_simplify_and_harden.sql, 0009_grants.sql, seed.sql
+-- ============================================================================
 
 -- ============================================================================
 -- 0001_menu.sql  —  Night Canteen (Milestone M0)
@@ -401,28 +406,345 @@ alter table public.orders
   check (source in ('qr', 'counter'));
 
 -- ============================================================================
--- seed.sql  —  Sample Night Canteen menu for local/dev.
--- Idempotent: fixed UUIDs + ON CONFLICT DO NOTHING, so it's safe to re-run.
--- Run in the Supabase SQL editor after 0001_menu.sql (see SETUP.md).
--- Prices are in paise (₹1 = 100 paise).
+-- 0008_simplify_and_harden.sql  —  Night Canteen
+-- Three things:
+--   1. `ready_at` — when the cook tapped Ready. Drives the 10-minute auto-clear
+--      that keeps the board short without asking the cook for a second tap.
+--   2. `sweep_orders()` — housekeeping. Retires collected orders off the board
+--      and cancels UPI checkouts that were abandoned at the payment sheet.
+--   3. `rate_limits` + `bump_rate_limit()` — an atomic, DB-backed counter, so
+--      the limit holds across serverless instances (in-memory would not).
+-- Run in the Supabase SQL editor after 0007_counter.sql.
 -- ============================================================================
 
+-- --------------------------------------------------------------------------
+-- 1. When the order became ready (null until the cook taps Ready)
+-- --------------------------------------------------------------------------
+alter table public.orders
+  add column if not exists ready_at timestamptz;
+
+-- The board reads active orders constantly; this keeps that query on an index.
+create index if not exists orders_ready_at_idx
+  on public.orders(ready_at)
+  where ready_at is not null;
+
+-- Backfill: anything already sitting in `ready` gets a clock so the sweep can
+-- reason about it instead of leaving it on the board forever.
+update public.orders
+   set ready_at = coalesce(updated_at, created_at)
+ where status = 'ready' and ready_at is null;
+
+-- --------------------------------------------------------------------------
+-- 2. Housekeeping sweep
+--
+-- Ready → completed after p_ready_minutes: the food has been handed over; the
+-- cook should not have to acknowledge that. Orders stay in the table (analytics
+-- still count them) — they just leave the board.
+--
+-- Abandoned UPI → cancelled after p_abandon_minutes: the customer opened the
+-- Razorpay sheet and walked away. NEVER touches cash orders (those legitimately
+-- wait for someone to reach the counter) and never touches anything paid.
+-- --------------------------------------------------------------------------
+create or replace function public.sweep_orders(
+  p_ready_minutes   int default 10,
+  p_abandon_minutes int default 30
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.orders
+     set status = 'completed'
+   where status = 'ready'
+     and ready_at is not null
+     and ready_at < now() - make_interval(mins => p_ready_minutes);
+
+  update public.orders
+     set status = 'cancelled'
+   where status = 'pending_payment'
+     and payment_status <> 'paid'
+     and payment_method = 'upi'
+     and created_at < now() - make_interval(mins => p_abandon_minutes);
+end;
+$$;
+
+revoke all on function public.sweep_orders(int, int) from public, anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 3. Rate limiting
+--
+-- One row per bucket key (session id, or client IP for people with no session
+-- yet). A fixed window that resets lazily on first hit after it expires.
+-- The whole read-modify-write happens inside one statement, so two concurrent
+-- requests can't both read the same count and slip past the limit.
+-- --------------------------------------------------------------------------
+create table if not exists public.rate_limits (
+  key          text        primary key,
+  count        int         not null default 0,
+  window_start timestamptz not null default now()
+);
+
+alter table public.rate_limits enable row level security;
+-- No policies at all: reachable only through the SECURITY DEFINER function below.
+
+create or replace function public.bump_rate_limit(
+  p_key             text,
+  p_limit           int,
+  p_window_seconds  int
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count int;
+begin
+  insert into public.rate_limits as rl (key, count, window_start)
+  values (p_key, 1, now())
+  on conflict (key) do update
+     set count = case
+           when rl.window_start < now() - make_interval(secs => p_window_seconds)
+             then 1
+             else rl.count + 1
+         end,
+         window_start = case
+           when rl.window_start < now() - make_interval(secs => p_window_seconds)
+             then now()
+             else rl.window_start
+         end
+  returning rl.count into v_count;
+
+  return v_count <= p_limit;
+end;
+$$;
+
+revoke all on function public.bump_rate_limit(text, int, int) from public, anon, authenticated;
+
+-- Keeps the table from growing without bound; safe to call any time.
+create or replace function public.prune_rate_limits()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.rate_limits where window_start < now() - interval '1 day';
+$$;
+
+revoke all on function public.prune_rate_limits() from public, anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- 4. Make sure the service role can actually call these.
+--
+-- 0004 revoked next_daily_order_number from public/anon/authenticated. That is
+-- correct, but it relies on service_role holding its own grant — and if that
+-- grant is missing, paid orders silently get no order number. Grant it here
+-- explicitly so the failure mode can't happen.
+-- --------------------------------------------------------------------------
+grant execute on function public.next_daily_order_number()          to service_role;
+grant execute on function public.sweep_orders(int, int)             to service_role;
+grant execute on function public.bump_rate_limit(text, int, int)    to service_role;
+grant execute on function public.prune_rate_limits()                to service_role;
+
+-- ============================================================================
+-- 0009_grants.sql  —  Night Canteen
+--
+-- Declares the table privileges the app needs, explicitly.
+--
+-- WHY THIS EXISTS
+-- An RLS policy is a filter, not a grant. `create policy ... to anon` says
+-- "of the rows anon may touch, these are visible" — it does NOT give anon the
+-- right to touch the table at all. That still requires GRANT.
+--
+-- Migrations 0001–0008 never granted anything; they relied on Postgres default
+-- privileges to hand out DML implicitly. That is a platform detail, not a
+-- promise. On a database where tables are owned by `postgres`, the default ACL
+-- gives anon/authenticated/service_role only TRUNCATE, REFERENCES and TRIGGER —
+-- no SELECT, INSERT, UPDATE or DELETE — and every single query fails with
+-- "permission denied for table". Not subtly: the customer menu returns an error.
+--
+-- Declaring the grants here makes the schema self-contained, so it behaves the
+-- same on a local stack, a fresh Supabase project, or any other Postgres.
+--
+-- SAFE TO RUN ANYWHERE: GRANT is idempotent. On a database that already has
+-- these privileges this migration changes nothing. It adds no tables, alters no
+-- columns and touches no data.
+--
+-- Privileges below mirror the RLS policies exactly — nothing wider. RLS still
+-- decides which rows are visible; these grants only make the tables reachable.
+-- ============================================================================
+
+grant usage on schema public to anon, authenticated, service_role;
+
+-- --------------------------------------------------------------------------
+-- service_role — the trusted server-side path (customer ordering, payments,
+-- sweeps, rate limiting). Bypasses RLS, but still needs table privileges.
+-- --------------------------------------------------------------------------
+grant select, insert, update, delete
+  on all tables in schema public
+  to service_role;
+
+grant usage, select on all sequences in schema public to service_role;
+
+-- --------------------------------------------------------------------------
+-- anon + authenticated — public read surfaces only.
+-- Matches the "public read" policies in 0001, 0005 and 0006.
+-- --------------------------------------------------------------------------
+grant select on
+    public.menu_categories,
+    public.menu_items,
+    public.menu_item_variants,
+    public.store_settings
+  to anon, authenticated;
+
+-- --------------------------------------------------------------------------
+-- authenticated (staff) — everything an admin policy already allows.
+-- RLS still gates each of these behind public.is_admin().
+-- --------------------------------------------------------------------------
+
+-- Menu management (0002, 0006): "for all" policies.
+grant insert, update, delete on
+    public.menu_categories,
+    public.menu_items,
+    public.menu_item_variants
+  to authenticated;
+
+-- Store open/closed (0005): update only.
+grant update on public.store_settings to authenticated;
+
+-- Own profile / staff lookup (0002): read only.
+grant select on public.admin_profiles to authenticated;
+
+-- Audit trail (0002): append and read; never edited or deleted.
+grant select, insert on public.audit_log to authenticated;
+
+-- Order board (0003): read orders + items, advance order status.
+grant select, update on public.orders to authenticated;
+grant select on public.order_items to authenticated;
+
+-- NOTE: customer_sessions, daily_counters and rate_limits are deliberately
+-- absent here. They have no RLS policies and are reached only through the
+-- service role or a SECURITY DEFINER function.
+
+-- --------------------------------------------------------------------------
+-- Future tables inherit the same shape, so a later migration can't silently
+-- reintroduce the problem this file fixes.
+-- --------------------------------------------------------------------------
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to service_role;
+
+alter default privileges in schema public
+  grant usage, select on sequences to service_role;
+
+-- ============================================================================
+-- seed.sql  —  Night Canteen live menu.
+--
+-- This is DATA, not configuration: once seeded, the menu is owned by the admin
+-- UI. Add, rename, re-price, or mark items sold out from /admin/menu — never by
+-- editing this file and re-running it. It exists to get a fresh database to the
+-- correct starting state.
+--
+-- Idempotent: fixed UUIDs + ON CONFLICT DO NOTHING, so re-running is a no-op and
+-- will NOT clobber prices you've since changed in the admin UI.
+--
+-- Run in the Supabase SQL editor after the migrations (see SETUP.md).
+-- Prices are INTEGER PAISE (₹1 = 100 paise).
+-- ============================================================================
+
+-- ---------------------------------------------------------------------------
+-- Clear the old dev sample menu, if this database ever had it. Only ever
+-- touches the sample UUIDs shipped in earlier versions of this file — real
+-- items created through the admin UI have random UUIDs and are untouched.
+-- ---------------------------------------------------------------------------
+delete from public.menu_items where id in (
+  'a0000001-0000-0000-0000-000000000001','a0000001-0000-0000-0000-000000000002',
+  'a0000001-0000-0000-0000-000000000003','a0000002-0000-0000-0000-000000000001',
+  'a0000002-0000-0000-0000-000000000002','a0000003-0000-0000-0000-000000000001',
+  'a0000003-0000-0000-0000-000000000002','a0000004-0000-0000-0000-000000000001',
+  'a0000004-0000-0000-0000-000000000002','a0000004-0000-0000-0000-000000000003'
+);
+delete from public.menu_categories where id in (
+  '11111111-1111-1111-1111-111111111111','22222222-2222-2222-2222-222222222222',
+  '33333333-3333-3333-3333-333333333333','44444444-4444-4444-4444-444444444444'
+);
+
+-- ---------------------------------------------------------------------------
+-- Categories — sort_order is the order they appear on the customer menu.
+-- ---------------------------------------------------------------------------
 insert into public.menu_categories (id, name, sort_order) values
-  ('11111111-1111-1111-1111-111111111111', 'Maggi & Noodles',   1),
-  ('22222222-2222-2222-2222-222222222222', 'Sandwiches & Toast', 2),
-  ('33333333-3333-3333-3333-333333333333', 'Snacks',            3),
-  ('44444444-4444-4444-4444-444444444444', 'Beverages',         4)
+  ('c1000000-0000-4000-8000-000000000001', 'Beverages',    1),
+  ('c1000000-0000-4000-8000-000000000002', 'Maggi',        2),
+  ('c1000000-0000-4000-8000-000000000003', 'Sandwiches',   3),
+  ('c1000000-0000-4000-8000-000000000004', 'Breads',       4),
+  ('c1000000-0000-4000-8000-000000000005', 'Pizzas',       5),
+  ('c1000000-0000-4000-8000-000000000006', 'Eggs',         6),
+  ('c1000000-0000-4000-8000-000000000007', 'French Fries', 7)
 on conflict (id) do nothing;
 
-insert into public.menu_items (id, category_id, name, description, price_paise, is_available, sort_order) values
-  ('a0000001-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Classic Masala Maggi', 'The 2-minute canteen staple, done right',            5000, true,  1),
-  ('a0000001-0000-0000-0000-000000000002', '11111111-1111-1111-1111-111111111111', 'Cheese Maggi',         'Classic Maggi loaded with melted cheese',            7000, true,  2),
-  ('a0000001-0000-0000-0000-000000000003', '11111111-1111-1111-1111-111111111111', 'Veg Hakka Noodles',    'Stir-fried noodles with veggies',                    9000, false, 3),
-  ('a0000002-0000-0000-0000-000000000001', '22222222-2222-2222-2222-222222222222', 'Veg Grilled Sandwich', 'Grilled sandwich with veggies and chutney',          6000, true,  1),
-  ('a0000002-0000-0000-0000-000000000002', '22222222-2222-2222-2222-222222222222', 'Cheese Grilled Toast', 'Extra-cheesy grilled toast',                         8000, true,  2),
-  ('a0000003-0000-0000-0000-000000000001', '33333333-3333-3333-3333-333333333333', 'Bread Pakora',         'Crispy fried bread pakora (2 pcs)',                  4000, true,  1),
-  ('a0000003-0000-0000-0000-000000000002', '33333333-3333-3333-3333-333333333333', 'French Fries',         'Salted fries with ketchup',                          9000, true,  2),
-  ('a0000004-0000-0000-0000-000000000001', '44444444-4444-4444-4444-444444444444', 'Masala Chai',          'Hot cutting-style masala chai',                      2000, true,  1),
-  ('a0000004-0000-0000-0000-000000000002', '44444444-4444-4444-4444-444444444444', 'Cold Coffee',          'Chilled, frothy cold coffee',                        8000, true,  2),
-  ('a0000004-0000-0000-0000-000000000003', '44444444-4444-4444-4444-444444444444', 'Bottled Water',        '500ml',                                              2000, true,  3)
+-- ---------------------------------------------------------------------------
+-- Items. Descriptions are intentionally left NULL — add them from the admin UI
+-- if you want them; inventing copy for someone else's food is a bad idea.
+-- ---------------------------------------------------------------------------
+
+-- Beverages ------------------------------------------------------------------
+insert into public.menu_items (id, category_id, name, price_paise, is_available, sort_order) values
+  ('a1000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', 'Tea',             1000, true, 1),
+  ('a1000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000001', 'Coffee',          1500, true, 2),
+  ('a1000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000001', 'Hot Chocolate',   6000, true, 3),
+  ('a1000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000001', 'Bournvita',       5000, true, 4),
+  ('a1000000-0000-4000-8000-000000000005', 'c1000000-0000-4000-8000-000000000001', 'Cold Coffee',     5000, true, 5),
+  ('a1000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000001', 'Cold Bournvita',  5000, true, 6),
+  ('a1000000-0000-4000-8000-000000000007', 'c1000000-0000-4000-8000-000000000001', 'Lassi',           3000, true, 7),
+  ('a1000000-0000-4000-8000-000000000008', 'c1000000-0000-4000-8000-000000000001', 'Masala Chaas',    1500, true, 8),
+  ('a1000000-0000-4000-8000-000000000009', 'c1000000-0000-4000-8000-000000000001', 'Oreo Shake',      6000, true, 9)
+on conflict (id) do nothing;
+
+-- Maggi ----------------------------------------------------------------------
+insert into public.menu_items (id, category_id, name, price_paise, is_available, sort_order) values
+  ('a2000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000002', 'Plain Maggi',              5000, true, 1),
+  ('a2000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000002', 'Masala Maggi',             6000, true, 2),
+  ('a2000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000002', 'Cheese Masala Maggi',      7000, true, 3),
+  ('a2000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000002', 'Egg Masala Cheese Maggi',  8000, true, 4)
+on conflict (id) do nothing;
+
+-- Sandwiches -----------------------------------------------------------------
+insert into public.menu_items (id, category_id, name, price_paise, is_available, sort_order) values
+  ('a3000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000003', 'Veg Sandwich',                    4000, true, 1),
+  ('a3000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000003', 'Veg Grilled Sandwich',            5000, true, 2),
+  ('a3000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000003', 'Cheese Grilled Sandwich',         6000, true, 3),
+  ('a3000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000003', 'Veg Cheese Grilled Sandwich',     7000, true, 4),
+  ('a3000000-0000-4000-8000-000000000005', 'c1000000-0000-4000-8000-000000000003', 'Chicken Grilled Sandwich',        8000, true, 5),
+  ('a3000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000003', 'Chicken Cheese Grilled Sandwich', 10000, true, 6)
+on conflict (id) do nothing;
+
+-- Breads ---------------------------------------------------------------------
+insert into public.menu_items (id, category_id, name, price_paise, is_available, sort_order) values
+  ('a4000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000004', 'Cheese Garlic Bread', 8000, true, 1),
+  ('a4000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000004', 'Cheese Chilli Toast', 8000, true, 2)
+on conflict (id) do nothing;
+
+-- Pizzas ---------------------------------------------------------------------
+insert into public.menu_items (id, category_id, name, price_paise, is_available, sort_order) values
+  ('a5000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000005', 'Margherita Cheese Pizza', 14900, true, 1),
+  ('a5000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000005', 'Veg Cheese Pizza',        17900, true, 2),
+  ('a5000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000005', 'Chicken Cheese Pizza',    19900, true, 3)
+on conflict (id) do nothing;
+
+-- Eggs -----------------------------------------------------------------------
+insert into public.menu_items (id, category_id, name, price_paise, is_available, sort_order) values
+  ('a6000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000006', 'Plain Omelette',  5000, true, 1),
+  ('a6000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000006', 'Masala Omelette', 5000, true, 2),
+  ('a6000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000006', 'Half Fry',        5000, true, 3),
+  ('a6000000-0000-4000-8000-000000000004', 'c1000000-0000-4000-8000-000000000006', 'Cheese Omelette', 8000, true, 4),
+  ('a6000000-0000-4000-8000-000000000005', 'c1000000-0000-4000-8000-000000000006', 'Egg Bhurji',      6000, true, 5),
+  ('a6000000-0000-4000-8000-000000000006', 'c1000000-0000-4000-8000-000000000006', 'Paneer Bhurji',   8000, true, 6)
+on conflict (id) do nothing;
+
+-- French Fries ---------------------------------------------------------------
+insert into public.menu_items (id, category_id, name, price_paise, is_available, sort_order) values
+  ('a7000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000007', 'French Fries',      6000, true, 1),
+  ('a7000000-0000-4000-8000-000000000002', 'c1000000-0000-4000-8000-000000000007', 'Peri Peri Fries',   7000, true, 2),
+  ('a7000000-0000-4000-8000-000000000003', 'c1000000-0000-4000-8000-000000000007', 'Cheese Fries',     10000, true, 3)
 on conflict (id) do nothing;

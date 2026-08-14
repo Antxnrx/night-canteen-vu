@@ -31,12 +31,36 @@ export async function markOrderPaid(
   if (!claimed) return; // already paid — nothing to do
 
   if (claimed.daily_order_number == null) {
+    await assignOrderNumber(supabase, orderId);
+  }
+}
+
+/**
+ * Assigns the daily order number. This is the number staff shout across the
+ * counter, so an order without one is genuinely broken for the customer even
+ * though their money went through — worth one retry and a loud log rather than
+ * a swallowed error.
+ */
+export async function assignOrderNumber(
+  supabase: ReturnType<typeof createAdminClient>,
+  orderId: string,
+): Promise<number | null> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     const { data: num, error } = await supabase.rpc("next_daily_order_number");
     if (!error && typeof num === "number") {
       await supabase
         .from("orders")
         .update({ daily_order_number: num })
         .eq("id", orderId);
+      return num;
     }
+    console.error(
+      `next_daily_order_number failed (attempt ${attempt}/2) for order ${orderId}:`,
+      error?.message ?? "unexpected return value",
+    );
   }
+  // Paid but unnumbered. The board shows these as "—" so staff can still find
+  // the order by name; check the service_role grant from migration 0008.
+  console.error(`ORDER ${orderId} IS PAID BUT HAS NO ORDER NUMBER`);
+  return null;
 }
