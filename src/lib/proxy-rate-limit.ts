@@ -129,8 +129,8 @@ export function identityFor(
 }
 
 /**
- * The payment webhook must never be throttled: Razorpay is the source of truth
- * for payment, it arrives from Razorpay's IPs rather than a customer's, and a
+ * The payment webhook must never be throttled: Cashfree is the source of truth
+ * for payment, it arrives from Cashfree's IPs rather than a customer's, and a
  * dropped delivery means someone paid and got no food.
  */
 export function isExempt(pathname: string): boolean {

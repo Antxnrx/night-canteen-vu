@@ -76,7 +76,7 @@ npm run dev
 
 Stop everything with `npx supabase stop`.
 
-> **UPI won't work locally** without Razorpay keys — see below. **Cash orders
+> **UPI won't work locally** without Cashfree keys — see below. **Cash orders
 > work with no extra setup**, so you can exercise the whole order → board →
 > ready → collected flow immediately.
 
@@ -115,7 +115,13 @@ every migration plus the seed and is safe to re-run.
 6. [`0006_variants.sql`](supabase/migrations/0006_variants.sql) — size variants
 7. [`0007_counter.sql`](supabase/migrations/0007_counter.sql) — counter billing (`source`)
 8. [`0008_simplify_and_harden.sql`](supabase/migrations/0008_simplify_and_harden.sql) — `ready_at`, order sweeps, rate limiting
-9. [`seed.sql`](supabase/seed.sql) — the live menu
+9. [`0009_grants.sql`](supabase/migrations/0009_grants.sql) — explicit table privileges (see note below)
+10. [`seed.sql`](supabase/seed.sql) — the live menu
+
+> **`0009` is not optional.** An RLS policy is not a grant. Migrations 0001–0008
+> issue none and rely on Postgres default privileges; where tables are owned by
+> `postgres` that yields no SELECT and *every* query fails, including the
+> customer menu. `GRANT` is idempotent, so running it is safe either way.
 
 </details>
 
@@ -134,33 +140,44 @@ take the service down.
 
 ---
 
-## Razorpay
+## Cashfree Payments
 
-1. [razorpay.com](https://razorpay.com), stay in **Test Mode** while developing.
-2. **Settings → API Keys → Generate Test Key**.
-3. Add to `.env.local`:
+1. [cashfree.com](https://www.cashfree.com) → **Developers → API Keys**. Stay in
+   **Sandbox** while developing.
+2. Add to `.env.local`:
    ```bash
-   RAZORPAY_KEY_ID=rzp_test_xxxxxxxx
-   RAZORPAY_KEY_SECRET=xxxxxxxx
+   CASHFREE_APP_ID=your_app_id
+   CASHFREE_SECRET_KEY=your_secret_key
+   CASHFREE_ENV=sandbox
    ```
-4. Restart `npm run dev`. At checkout use the test UPI id `success@razorpay`.
+3. Restart `npm run dev` and pay with Cashfree's sandbox test instruments.
 
-**Going live:** live mode issues a *different* key id, secret, **and** webhook
-secret. All three change together — a live key with a test webhook secret takes
-real money and then rejects every confirmation.
+**Going live:** switch `CASHFREE_ENV=production` **and** swap both keys for the
+production pair. Production keys against `sandbox`, or the reverse, fails every
+payment — the two environments are entirely separate.
 
 ### The webhook
-Only needed once deployed to a public URL; Razorpay can't reach `localhost`.
+Only needed once deployed to a public URL; Cashfree can't reach `localhost`.
 
-- **Dashboard → Settings → Webhooks →** `https://<your-domain>/api/webhooks/razorpay`
-- Subscribe to **`payment.captured`** and **`order.paid`**
-- Put the signing secret in `RAZORPAY_WEBHOOK_SECRET`
+- **Dashboard → Developers → Webhooks →** `https://<your-domain>/api/webhooks/cashfree`
+- Subscribe to the **payment success** event
 
-If that variable is empty, **every webhook is rejected** and the browser
-callback becomes the only thing that marks an order paid — so a customer who
-pays and immediately closes the tab is charged with no order on the board.
+There is **no separate webhook secret** — Cashfree signs with your
+`CASHFREE_SECRET_KEY`, so no extra variable is needed. Signature is
+`base64(HMAC-SHA256(x-webhook-timestamp + rawBody))`, and deliveries older than
+five minutes are rejected as replays.
 
----
+Without a reachable webhook, the only thing that confirms payment is the
+customer's browser returning from checkout — so someone who pays and
+immediately locks their phone is charged with no order on the board.
+
+### How confirmation works
+Cashfree has no client-side signature, so nothing the browser sends is trusted.
+When checkout closes, the browser only tells the server *when* to look; the
+server then asks Cashfree directly and requires three things before marking an
+order paid: status `PAID`, currency `INR`, and an amount matching the total we
+computed. The webhook performs the identical checks. Whichever arrives first
+wins, and the update is idempotent.
 
 ## Signing in
 
@@ -184,9 +201,9 @@ per 15 minutes. Locking yourself out during testing clears on its own — or run
 | `NEXT_PUBLIC_SUPABASE_URL` | yes | |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | |
 | `SUPABASE_SERVICE_ROLE_KEY` | yes | Server only. Bypasses RLS. |
-| `RAZORPAY_KEY_ID` | for UPI | Cash orders work without it |
-| `RAZORPAY_KEY_SECRET` | for UPI | |
-| `RAZORPAY_WEBHOOK_SECRET` | in production | See above |
+| `CASHFREE_APP_ID` | for UPI | Cash orders work without it |
+| `CASHFREE_SECRET_KEY` | for UPI | Also signs webhooks |
+| `CASHFREE_ENV` | no | `sandbox` (default) or `production` |
 | `ADMIN_EMAIL_DOMAIN` | no | Default `nightcanteen.local` |
 | `CAMPUS_LAT` / `CAMPUS_LON` | no | Weather accents. Defaults to Karjat. |
 
@@ -205,5 +222,5 @@ per 15 minutes. Locking yourself out during testing clears on its own — or run
 ---
 
 ### Status
-- **M0–M5** complete: foundations, menu + admin CRUD, cart and server-side pricing, Razorpay UPI, live board, cash + store toggle + Realtime.
+- **M0–M5** complete: foundations, menu + admin CRUD, cart and server-side pricing, Cashfree UPI, live board, cash + store toggle + Realtime.
 - **Since:** live menu seeded, order flow reduced to one staff action with a self-clearing board, weather- and time-aware customer UI, site-wide and per-endpoint rate limiting, IST-correct analytics, and order housekeeping sweeps.

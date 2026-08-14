@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useCart, lineKey } from "@/components/cart/cart-provider";
 import { createOrder } from "@/lib/actions/order";
 import { verifyPayment } from "@/lib/actions/payment";
-import { loadRazorpay, UPI_ONLY_CONFIG } from "@/components/cart/razorpay-checkout";
+import { loadCashfree } from "@/components/cart/cashfree-checkout";
 import { formatPaise } from "@/lib/format";
 import { Button, buttonClasses } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
@@ -75,49 +75,32 @@ export function CheckoutForm() {
       return;
     }
 
-    const Razorpay = await loadRazorpay();
-    if (!Razorpay) {
+    const cashfree = await loadCashfree(res.mode);
+    if (!cashfree) {
       setError("Couldn't open the payment window. Check your connection and try again.");
       setBusy(false);
       return;
     }
 
-    const rzp = new Razorpay({
-      key: res.keyId,
-      order_id: res.razorpayOrderId,
-      amount: res.amountPaise,
-      currency: "INR",
-      name: "Night Canteen",
-      description: "Food order",
-      prefill: { name: res.customerName, contact: res.phone ?? undefined },
-      theme: { color: "#2b2a5c" },
-      config: UPI_ONLY_CONFIG,
-      handler: async (response) => {
-        const v = await verifyPayment({
-          orderId: res.orderId,
-          razorpayOrderId: response.razorpay_order_id,
-          razorpayPaymentId: response.razorpay_payment_id,
-          razorpaySignature: response.razorpay_signature,
-        });
-        if (v.ok) {
-          clear();
-          router.push(`/order/${res.orderId}`);
-        } else {
-          setError(
-            v.error ??
-              "We couldn't verify your payment. If money was deducted, it will be refunded.",
-          );
-          setBusy(false);
-        }
-      },
-      modal: {
-        ondismiss: () => {
-          setBusy(false);
-          setError("Payment cancelled — your cart is saved. Tap to pay again.");
-        },
-      },
+    // Checkout resolves when the sheet closes — for any reason. Whether money
+    // actually moved is never decided here: the server asks Cashfree directly.
+    await cashfree.checkout({
+      paymentSessionId: res.paymentSessionId,
+      redirectTarget: "_modal",
     });
-    rzp.open();
+
+    const v = await verifyPayment(res.orderId);
+    if (v.ok) {
+      clear();
+      router.push(`/order/${res.orderId}`);
+      return;
+    }
+
+    setError(
+      v.error ??
+        "We couldn't confirm your payment. If money was deducted it will be refunded, or your order will appear shortly.",
+    );
+    setBusy(false);
   }
 
   return (
@@ -229,7 +212,7 @@ export function CheckoutForm() {
           <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
-          Secure UPI payment via Razorpay
+          Secure UPI payment via Cashfree
         </p>
       ) : (
         <p className="text-center text-xs text-muted">
