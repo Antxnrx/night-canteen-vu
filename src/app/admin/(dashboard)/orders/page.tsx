@@ -1,10 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { BOARD_SELECT, BOARD_FILTER, type BoardOrder } from "@/lib/order-status";
+import { sweepOrders } from "@/lib/sweep";
 import { OrderBoard } from "@/components/admin/order-board";
 
 export const dynamic = "force-dynamic";
 
 export default async function OrdersPage() {
+  // Retire collected orders + abandoned checkouts before reading the board.
+  await sweepOrders();
+
   const supabase = await createClient();
   const { data } = await supabase
     .from("orders")

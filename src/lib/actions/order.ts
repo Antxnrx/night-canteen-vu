@@ -7,6 +7,8 @@ import { isSupabaseConfigured, isRazorpayConfigured } from "@/lib/env";
 import { createRazorpayOrder, razorpayKeyId } from "@/lib/razorpay";
 import { getStoreOpen } from "@/lib/store";
 import { priceLines } from "@/lib/pricing";
+import { allow, clientIp } from "@/lib/rate-limit";
+import { getSession } from "@/lib/session";
 
 export type CreateOrderInput = {
   items: { id: string; variantId?: string | null; qty: number }[];
@@ -53,6 +55,7 @@ export async function createOrder(
     };
   }
 
+
   const name = (input.name ?? "").trim();
   if (!name) return { error: "Please enter your name." };
   if (name.length > 60) return { error: "That name is too long." };
@@ -92,6 +95,24 @@ export async function createOrder(
         phone: existing.customer_phone,
       };
     }
+  }
+
+  // Past the retry path, so this only ever counts genuinely NEW orders — a
+  // customer re-opening payment on bad wifi reuses their idempotency key above
+  // and is never the one who gets throttled.
+  //
+  // Cash orders reach the board without any payment, so without a limit one
+  // person can bury the kitchen in junk. Keyed on the session where there is
+  // one, otherwise the IP: a fresh session per request would defeat the first
+  // bucket on its own.
+  const existingSession = await getSession();
+  const bucket = existingSession
+    ? `order:s:${existingSession.id}`
+    : `order:ip:${await clientIp()}`;
+  if (!(await allow(bucket, 8, 300))) {
+    return {
+      error: "That's a lot of orders at once. Give it a minute, then try again.",
+    };
   }
 
   // Server-side pricing (shared with counter billing).

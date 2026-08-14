@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { BOARD_SELECT, BOARD_FILTER } from "@/lib/order-status";
+import { sweepOrders } from "@/lib/sweep";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +24,9 @@ export async function GET() {
   if (!profile) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
+
+  // Throttled internally, so the 5s board poll doesn't turn this into a flood.
+  await sweepOrders();
 
   const { data, error } = await supabase
     .from("orders")

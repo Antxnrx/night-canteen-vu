@@ -1,11 +1,17 @@
 import { redirect } from "next/navigation";
 import { getStoreOpen } from "@/lib/store";
+import { getActiveOrder } from "@/lib/customer-order";
 
 export const dynamic = "force-dynamic";
 
 export default async function ClosedPage() {
   // If we've reopened, don't strand people here.
   if (await getStoreOpen()) redirect("/");
+
+  // Closed, but this person already has food coming (or cash to hand over).
+  // They should be watching their order, not reading a goodbye note.
+  const active = await getActiveOrder();
+  if (active) redirect(`/order/${active.id}`);
 
   return (
     <main className="flex min-h-full flex-col items-center justify-center bg-primary-deep px-6 py-16 text-center text-on-primary">

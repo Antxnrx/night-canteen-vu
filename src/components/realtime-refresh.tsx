@@ -6,9 +6,17 @@ import { createClient } from "@/lib/supabase/client";
 
 /**
  * Subscribes to changes on a public table and re-renders the current server
- * page when they arrive. Debounced so a burst of changes coalesces into a
- * single refresh (avoids visible re-render churn during busy periods).
+ * page when they arrive.
+ *
+ * Debounced so a burst of changes coalesces into one refresh — and jittered,
+ * which matters more than it looks. Every customer on the menu is subscribed to
+ * the same table, so a fixed delay means one "sold out" tap sends every phone
+ * on campus back to the server inside the same instant. The random spread turns
+ * that spike into a few seconds of ordinary traffic.
  */
+const DEBOUNCE_MS = 400;
+const JITTER_MS = 2600;
+
 export function RealtimeRefresh({
   table,
   channel,
@@ -23,10 +31,13 @@ export function RealtimeRefresh({
 
     const scheduleRefresh = () => {
       if (timer) return;
-      timer = setTimeout(() => {
-        timer = null;
-        router.refresh();
-      }, 400);
+      timer = setTimeout(
+        () => {
+          timer = null;
+          router.refresh();
+        },
+        DEBOUNCE_MS + Math.random() * JITTER_MS,
+      );
     };
 
     const ch = supabase

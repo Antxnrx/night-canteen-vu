@@ -1,6 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
+import {
+  check,
+  identityFor,
+  isExempt,
+  tierFor,
+} from "@/lib/proxy-rate-limit";
 
 /**
  * Refreshes the Supabase auth session on every request (so server components
@@ -9,6 +15,29 @@ import { env } from "@/lib/env";
  * (Next 16 "proxy" convention — formerly middleware.)
  */
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Site-wide throttle, before anything else touches the database. Payment
+  // webhooks are exempt — see isExempt().
+  if (!isExempt(pathname)) {
+    const tier = tierFor(pathname, request.method);
+    const identity = identityFor(
+      tier,
+      request.headers,
+      request.cookies.get("nc_session")?.value,
+    );
+    const verdict = check(identity, tier);
+    if (!verdict.ok) {
+      return new NextResponse("Too many requests. Please slow down.", {
+        status: 429,
+        headers: {
+          "Retry-After": String(verdict.retryAfter),
+          "Cache-Control": "no-store",
+        },
+      });
+    }
+  }
+
   let response = NextResponse.next({ request });
 
   // Before Supabase is configured, don't attempt auth — just pass through.
@@ -37,7 +66,6 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
   const isAdminArea =
     pathname.startsWith("/admin") && !pathname.startsWith("/admin/login");
 

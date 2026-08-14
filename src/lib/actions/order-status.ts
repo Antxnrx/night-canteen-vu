@@ -32,9 +32,14 @@ export async function setOrderStatus(
     return { ok: false, error: "That status change isn't allowed." };
   }
 
+  // Stamp when it became ready — that clock is what retires the card off the
+  // board ten minutes later, so the cook never taps "collected".
+  const patch: { status: OrderStatus; ready_at?: string } = { status: toStatus };
+  if (toStatus === "ready") patch.ready_at = new Date().toISOString();
+
   const { data: updated, error } = await admin.supabase
     .from("orders")
-    .update({ status: toStatus })
+    .update(patch)
     .eq("id", orderId)
     .eq("status", from) // conditional: only if still in the expected state
     .select("id")
