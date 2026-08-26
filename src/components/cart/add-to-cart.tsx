@@ -43,7 +43,7 @@ export function AddToCart({
       <StepBtn label={`Remove one ${name}`} onClick={() => setQty(lineKey(id, null), qty - 1)}>
         <MinusIcon />
       </StepBtn>
-      <span className="min-w-6 text-center text-sm font-semibold tabular-nums text-on-accent">
+      <span className="min-w-6 text-center text-sm font-semibold tabular-nums text-foreground">
         {qty}
       </span>
       <StepBtn
@@ -70,7 +70,7 @@ function StepBtn({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="grid size-7 place-items-center rounded-full text-on-accent transition-[transform,background-color] duration-150 hover:bg-accent/25 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+      className="grid size-7 place-items-center rounded-full text-foreground transition-[transform,background-color] duration-150 hover:bg-accent/25 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
     >
       {children}
     </button>

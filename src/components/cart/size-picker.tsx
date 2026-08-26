@@ -132,7 +132,7 @@ function SizeSheet({
                     >
                       <MinusIcon />
                     </StepBtn>
-                    <span className="min-w-6 text-center text-sm font-semibold tabular-nums text-on-accent">
+                    <span className="min-w-6 text-center text-sm font-semibold tabular-nums text-foreground">
                       {q}
                     </span>
                     <StepBtn
@@ -176,7 +176,7 @@ function StepBtn({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="grid size-7 place-items-center rounded-full text-on-accent transition-[transform,background-color] duration-150 hover:bg-accent/25 active:scale-90"
+      className="grid size-7 place-items-center rounded-full text-foreground transition-[transform,background-color] duration-150 hover:bg-accent/25 active:scale-90"
     >
       {children}
     </button>
