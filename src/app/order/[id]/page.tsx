@@ -1,10 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/session";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { formatPaise } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
-import { buttonClasses } from "@/components/ui/button";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ReorderButton, type ReorderLine } from "@/components/cart/reorder-button";
 import { CookingAnimation } from "@/components/cooking-animation";
@@ -82,7 +80,7 @@ export default async function OrderPage({
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 px-5 py-7">
+      <main className="mx-auto w-full max-w-lg flex-1 px-5 pb-28 pt-7">
         {/* Order number + status */}
         <div
           className={cn(
@@ -157,16 +155,14 @@ export default async function OrderPage({
           </div>
         </div>
 
-        <div className="mt-5 space-y-2">
-          <ReorderButton lines={(items ?? []) as ReorderLine[]} />
-          <Link
-            href="/"
-            className={cn(buttonClasses({ variant: "secondary", size: "md" }), "w-full")}
-          >
-            Back to menu
-          </Link>
-        </div>
       </main>
+
+      {/* Anchored to the bottom of the viewport — always reachable. */}
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(8,13,31,0.1)]">
+        <div className="mx-auto max-w-lg">
+          <ReorderButton lines={(items ?? []) as ReorderLine[]} />
+        </div>
+      </div>
     </div>
   );
 }

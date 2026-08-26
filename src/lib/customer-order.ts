@@ -9,27 +9,29 @@ export type ActiveOrder = {
   daily_order_number: number | null;
   status: OrderStatus;
   payment_method: "upi" | "cash" | null;
+  total_paise: number;
+  created_at: string;
 };
 
 /**
- * The current customer's most recent *active* order (paid & not yet collected,
- * or a cash order awaiting payment). Abandoned UPI checkouts are excluded.
- * Used to surface a "track your order" entry point so customers never lose it.
+ * All of the current customer's *active* orders (paid & not yet collected, or
+ * a cash order awaiting payment), newest first. Abandoned UPI checkouts are
+ * excluded. Used to surface a "track your order(s)" entry point so a customer
+ * never loses an order — including one placed before another that's still
+ * active, which a single-order lookup would otherwise hide.
  */
-export async function getActiveOrder(): Promise<ActiveOrder | null> {
-  if (!isSupabaseConfigured()) return null;
+export async function getActiveOrders(): Promise<ActiveOrder[]> {
+  if (!isSupabaseConfigured()) return [];
   const session = await getSession();
-  if (!session) return null;
+  if (!session) return [];
 
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("orders")
-    .select("id,daily_order_number,status,payment_method")
+    .select("id,daily_order_number,status,payment_method,total_paise,created_at")
     .eq("session_id", session.id)
     .or("status.in.(new,ready),and(status.eq.pending_payment,payment_method.eq.cash)")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order("created_at", { ascending: false });
 
-  return (data as ActiveOrder) ?? null;
+  return (data as ActiveOrder[]) ?? [];
 }
