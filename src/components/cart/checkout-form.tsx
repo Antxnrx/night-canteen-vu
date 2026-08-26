@@ -104,7 +104,8 @@ export function CheckoutForm() {
   }
 
   return (
-    <div className="space-y-6">
+    <>
+    <div className="space-y-6 pb-72">
       <section className="overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
         {lines.map((line, i) => {
           const key = lineKey(line.id, line.variantId);
@@ -175,51 +176,58 @@ export function CheckoutForm() {
           />
         </Field>
       </section>
-
-      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card">
-        <p className="mb-3 text-sm font-medium text-foreground">Payment</p>
-        <div className="grid grid-cols-2 gap-2">
-          <MethodOption
-            active={method === "upi"}
-            onClick={() => setMethod("upi")}
-            title="UPI"
-            subtitle="Pay now, instantly"
-          />
-          <MethodOption
-            active={method === "cash"}
-            onClick={() => setMethod("cash")}
-            title="Cash"
-            subtitle="Pay at the counter"
-          />
-        </div>
-      </section>
-
-      {error && (
-        <p role="alert" className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
-      )}
-
-      <Button onClick={placeOrder} loading={busy} size="lg" className="w-full">
-        {busy
-          ? "Processing…"
-          : method === "upi"
-            ? `Pay ${formatPaise(subtotalPaise)} with UPI`
-            : `Place order · ${formatPaise(subtotalPaise)} cash`}
-      </Button>
-      {method === "upi" ? (
-        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted">
-          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          </svg>
-          Secure UPI payment via Cashfree
-        </p>
-      ) : (
-        <p className="text-center text-xs text-muted">
-          Pay in cash at the counter — we&rsquo;ll start your order once it&rsquo;s received.
-        </p>
-      )}
     </div>
+
+    {/* Anchored to the bottom of the viewport — payment method and pay button
+        stay reachable without scrolling, however long the order gets. */}
+    <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(8,13,31,0.1)]">
+      <div className="mx-auto max-w-lg space-y-3">
+        <section className="rounded-2xl border border-border bg-surface-2/50 p-4">
+          <p className="mb-3 text-sm font-medium text-foreground">Payment</p>
+          <div className="grid grid-cols-2 gap-2">
+            <MethodOption
+              active={method === "upi"}
+              onClick={() => setMethod("upi")}
+              title="UPI"
+              subtitle="Pay now, instantly"
+            />
+            <MethodOption
+              active={method === "cash"}
+              onClick={() => setMethod("cash")}
+              title="Cash"
+              subtitle="Pay at the counter"
+            />
+          </div>
+        </section>
+
+        {error && (
+          <p role="alert" className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">
+            {error}
+          </p>
+        )}
+
+        <Button onClick={placeOrder} loading={busy} size="lg" className="w-full">
+          {busy
+            ? "Processing…"
+            : method === "upi"
+              ? `Pay ${formatPaise(subtotalPaise)} with UPI`
+              : `Place order · ${formatPaise(subtotalPaise)} cash`}
+        </Button>
+        {method === "upi" ? (
+          <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted">
+            <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>
+            Secure UPI payment via Cashfree
+          </p>
+        ) : (
+          <p className="text-center text-xs text-muted">
+            Pay in cash at the counter — we&rsquo;ll start your order once it&rsquo;s received.
+          </p>
+        )}
+      </div>
+    </div>
+    </>
   );
 }
 
