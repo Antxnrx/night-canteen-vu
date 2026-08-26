@@ -80,8 +80,12 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except static assets and image files.
+  // Run on everything except static assets and media files.
+  //
+  // Media matters as much as images here: a video is fetched in range requests,
+  // and without this every one of them would spend a Supabase `getUser()` round
+  // trip and a slot in the rate limiter to serve a file from `public/`.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|mp4|webm)$).*)",
   ],
 };

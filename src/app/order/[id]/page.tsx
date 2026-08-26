@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { buttonClasses } from "@/components/ui/button";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { ReorderButton, type ReorderLine } from "@/components/cart/reorder-button";
-import { customerStatus, type OrderStatus } from "@/lib/order-status";
+import { CookingAnimation } from "@/components/cooking-animation";
+import { customerStatus, isCooking, type OrderStatus } from "@/lib/order-status";
 import { cn } from "@/lib/cn";
 
 export const dynamic = "force-dynamic";
@@ -53,6 +54,7 @@ export default async function OrderPage({
   const pending = status === "pending_payment";
   const done = status === "completed" || status === "cancelled";
   const ready = status === "ready";
+  const cooking = isCooking(status);
   const paid = order.payment_status === "paid";
   const payLabel = paid
     ? method === "cash"
@@ -101,6 +103,16 @@ export default async function OrderPage({
               {cs.label}
             </Badge>
           </div>
+
+          {cooking && (
+            <div className="mt-5">
+              <CookingAnimation />
+              <p className="mx-auto mt-4 max-w-xs text-sm text-muted">
+                On the pan now. This screen updates itself the moment it&rsquo;s
+                ready — no need to refresh.
+              </p>
+            </div>
+          )}
 
           {pending && (
             <p className="mx-auto mt-4 max-w-xs text-sm text-muted">
