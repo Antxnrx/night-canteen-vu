@@ -318,21 +318,23 @@ function verifyPassword(password: string, stored: string) {
 }
 
 async function bootstrapAdmin(db: Db) {
-  const count = await db.collection("admin_profiles").countDocuments();
-  if (count > 0 || !env.adminUsername || !env.adminPassword) return;
+  if (!env.adminUsername || !env.adminPassword) return;
   const email = toAdminEmail(env.adminUsername);
+  const existing = await db.collection("admin_users").findOne({ email });
+  if (existing) return;
   const userId = randomUUID();
+  const stamp = now();
   await db.collection("admin_users").insertOne({
     id: userId,
     email,
     password_hash: passwordHash(env.adminPassword),
-    created_at: now(),
+    created_at: stamp,
   });
   await db.collection("admin_profiles").insertOne({
     user_id: userId,
     display_name: env.adminUsername,
     role: "owner",
-    created_at: now(),
+    created_at: stamp,
   });
 }
 
@@ -344,21 +346,31 @@ async function ensureStoreSettings(db: Db) {
   );
 }
 
+let setupPromise: Promise<void> | null = null;
+
 export async function ensureMongoSetup() {
   if (!isMongoConfigured()) return;
-  const db = await getDb();
-  await Promise.all([
-    db.collection("menu_categories").createIndex({ sort_order: 1 }),
-    db.collection("menu_items").createIndex({ category_id: 1, sort_order: 1 }),
-    db.collection("menu_item_variants").createIndex({ item_id: 1, sort_order: 1 }),
-    db.collection("orders").createIndex({ idempotency_key: 1 }, { sparse: true }),
-    db.collection("orders").createIndex({ session_id: 1, created_at: -1 }),
-    db.collection("order_items").createIndex({ order_id: 1 }),
-    db.collection("customer_sessions").createIndex({ token: 1 }, { unique: true }),
-    db.collection("rate_limits").createIndex({ key: 1 }, { unique: true }),
-  ]);
-  await ensureStoreSettings(db);
-  await bootstrapAdmin(db);
+  if (!setupPromise) {
+    setupPromise = (async () => {
+      const db = await getDb();
+      await Promise.all([
+        db.collection("menu_categories").createIndex({ sort_order: 1 }),
+        db.collection("menu_items").createIndex({ category_id: 1, sort_order: 1 }),
+        db.collection("menu_item_variants").createIndex({ item_id: 1, sort_order: 1 }),
+        db.collection("orders").createIndex({ idempotency_key: 1 }, { sparse: true }),
+        db.collection("orders").createIndex({ session_id: 1, created_at: -1 }),
+        db.collection("order_items").createIndex({ order_id: 1 }),
+        db.collection("customer_sessions").createIndex({ token: 1 }, { unique: true }),
+        db.collection("rate_limits").createIndex({ key: 1 }, { unique: true }),
+      ]);
+      await ensureStoreSettings(db);
+      await bootstrapAdmin(db);
+    })().catch((err) => {
+      setupPromise = null;
+      throw err;
+    });
+  }
+  return setupPromise;
 }
 
 export async function createClient() {
