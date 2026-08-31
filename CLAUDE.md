@@ -11,21 +11,19 @@ the menu from a phone dashboard.
 
 ## Stack
 - **Next.js 16** (App Router, TypeScript) + **Tailwind v4**, deploy target **Vercel**.
-- **Supabase**: Postgres + Realtime + Auth (admin accounts). DB access via `@supabase/ssr`.
-- **Razorpay** payments (pay-upfront), server-side only. **Test mode** during dev.
+- **MongoDB Atlas** for menu, orders, sessions, admin accounts, counters, audit logs, and rate limits.
+- **Cashfree/Razorpay-era payment flow** (pay-upfront), server-side only. **Sandbox/test mode** during dev.
 
 ## Non-negotiable rules
 - **All prices/totals are computed server-side** from the DB. Never trust a client-sent price or total.
 - Money is stored and computed as **integer paise**, never floats/decimals.
-- Razorpay secrets and the Supabase **service-role** key live only in server env — never `NEXT_PUBLIC_`.
+- Payment secrets and MongoDB credentials live only in server env — never `NEXT_PUBLIC_`.
 - Customers are identified by a **server-issued session token** (httpOnly cookie), not by phone. No OTP in v1.
 
 ## Layout
 - `src/app/` — routes: customer + admin pages, and `api/*/route.ts` route handlers.
-- `src/lib/supabase/` — `client.ts` (browser), `server.ts` (server/SSR; `cookies()` is async).
+- `src/lib/mongodb/` — MongoDB connection, query compatibility adapter, and admin auth helpers.
 - `src/lib/` — `env.ts` (env access), plus data-access + domain helpers.
-- `supabase/migrations/` — SQL migrations, numbered; run in the Supabase SQL editor for now.
-- `supabase/seed.sql` — sample dev menu.
 
 ## Build order (milestones — see TRD §10)
 M0 foundations → M1 menu + admin CRUD → M2 cart/order (server pricing) → M3 Razorpay →

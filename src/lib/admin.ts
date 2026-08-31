@@ -1,6 +1,6 @@
 import "server-only";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/env";
+import { createClient } from "@/lib/mongodb/client";
+import { isMongoConfigured } from "@/lib/env";
 
 export type AdminProfile = {
   user_id: string;
@@ -9,12 +9,12 @@ export type AdminProfile = {
 };
 
 /**
- * Returns the current admin (auth user + profile) and an authed Supabase
+ * Returns the current admin (auth user + profile) and an authed MongoDB
  * client, or null if not signed in / not an admin. Callers decide how to
  * respond (redirect for pages, error state for actions).
  */
 export async function getCurrentAdmin() {
-  if (!isSupabaseConfigured()) return null;
+  if (!isMongoConfigured()) return null;
   const supabase = await createClient();
   const {
     data: { user },

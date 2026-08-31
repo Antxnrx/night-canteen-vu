@@ -1,5 +1,5 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { createAdminClient } from "@/lib/mongodb/client";
 
 const MAX_QTY_PER_ITEM = 50;
 
@@ -25,7 +25,7 @@ export type PriceResult =
  * refuses unavailable items. Callers pass only ids + quantities.
  */
 export async function priceLines(
-  supabase: SupabaseClient,
+  supabase: ReturnType<typeof createAdminClient>,
   rawItems: RawLine[],
 ): Promise<PriceResult> {
   const wanted = new Map<

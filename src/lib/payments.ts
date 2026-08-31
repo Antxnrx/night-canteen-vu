@@ -1,5 +1,5 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 
 /**
  * Marks an order paid and moves it into the kitchen queue. Idempotent and safe

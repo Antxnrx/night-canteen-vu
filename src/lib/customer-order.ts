@@ -1,7 +1,7 @@
 import "server-only";
 import { getSession } from "@/lib/session";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/env";
+import { createAdminClient } from "@/lib/mongodb/client";
+import { isMongoConfigured } from "@/lib/env";
 import type { OrderStatus } from "@/lib/order-status";
 
 export type ActiveOrder = {
@@ -21,7 +21,7 @@ export type ActiveOrder = {
  * active, which a single-order lookup would otherwise hide.
  */
 export async function getActiveOrders(): Promise<ActiveOrder[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isMongoConfigured()) return [];
   const session = await getSession();
   if (!session) return [];
 

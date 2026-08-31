@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/mongodb/client";
 import { BOARD_SELECT, BOARD_FILTER, type BoardOrder } from "@/lib/order-status";
 import { sweepOrders } from "@/lib/sweep";
 import { OrderBoard } from "@/components/admin/order-board";

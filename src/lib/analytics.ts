@@ -1,5 +1,5 @@
 import "server-only";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/mongodb/client";
 
 export type Range = "today" | "7d" | "all";
 

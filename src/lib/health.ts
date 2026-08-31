@@ -1,9 +1,9 @@
 import "server-only";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/env";
+import { createClient } from "@/lib/mongodb/client";
+import { isMongoConfigured } from "@/lib/env";
 
 export type SystemStatus = {
-  supabaseConfigured: boolean;
+  mongoConfigured: boolean;
   dbReachable: boolean;
   itemCount: number | null;
   error: string | null;
@@ -11,13 +11,13 @@ export type SystemStatus = {
 
 /**
  * End-to-end health probe used by the landing page and `/api/health`.
- * Proves the app can reach Supabase and read the menu through Row Level Security.
- * Degrades gracefully before Supabase is configured (see SETUP.md).
+ * Proves the app can reach MongoDB and read the menu through Row Level Security.
+ * Degrades gracefully before MongoDB is configured (see SETUP.md).
  */
 export async function getSystemStatus(): Promise<SystemStatus> {
-  if (!isSupabaseConfigured()) {
+  if (!isMongoConfigured()) {
     return {
-      supabaseConfigured: false,
+      mongoConfigured: false,
       dbReachable: false,
       itemCount: null,
       error: null,
@@ -35,7 +35,7 @@ export async function getSystemStatus(): Promise<SystemStatus> {
 
     if (error) {
       return {
-        supabaseConfigured: true,
+        mongoConfigured: true,
         dbReachable: false,
         itemCount: null,
         error: error.message,
@@ -43,14 +43,14 @@ export async function getSystemStatus(): Promise<SystemStatus> {
     }
 
     return {
-      supabaseConfigured: true,
+      mongoConfigured: true,
       dbReachable: true,
       itemCount: count ?? 0,
       error: null,
     };
   } catch (e) {
     return {
-      supabaseConfigured: true,
+      mongoConfigured: true,
       dbReachable: false,
       itemCount: null,
       error: e instanceof Error ? e.message : "Unknown error",

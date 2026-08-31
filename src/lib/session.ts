@@ -1,7 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { randomBytes } from "node:crypto";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 
 const COOKIE = "nc_session";
 const MAX_AGE_SECONDS = 60 * 60 * 24 * 30; // 30 days
@@ -60,7 +60,13 @@ export async function ensureSession(
   const token = randomBytes(32).toString("base64url");
   const { data, error } = await supabase
     .from("customer_sessions")
-    .insert({ token, name, phone })
+    .insert({
+      token,
+      name,
+      phone,
+      last_seen_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + MAX_AGE_SECONDS * 1000).toISOString(),
+    })
     .select("id")
     .single();
   if (error || !data) {

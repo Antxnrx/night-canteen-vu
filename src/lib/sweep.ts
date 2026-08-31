@@ -1,5 +1,5 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 
 /**
  * Housekeeping, run just before the board is read.

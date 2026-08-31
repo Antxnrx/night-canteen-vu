@@ -2,20 +2,14 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 
 /**
- * Subscribes to changes on a public table and re-renders the current server
- * page when they arrive.
+ * Polls the current server page for fresh MongoDB-backed data.
  *
- * Debounced so a burst of changes coalesces into one refresh — and jittered,
- * which matters more than it looks. Every customer on the menu is subscribed to
- * the same table, so a fixed delay means one "sold out" tap sends every phone
- * on campus back to the server inside the same instant. The random spread turns
- * that spike into a few seconds of ordinary traffic.
+ * A light jitter keeps menu refreshes spread out across visitors.
  */
-const DEBOUNCE_MS = 400;
-const JITTER_MS = 2600;
+const POLL_MS = 5000;
+const JITTER_MS = 2000;
 
 export function RealtimeRefresh({
   table,
@@ -26,32 +20,12 @@ export function RealtimeRefresh({
 }) {
   const router = useRouter();
   useEffect(() => {
-    const supabase = createClient();
-    let timer: ReturnType<typeof setTimeout> | null = null;
-
-    const scheduleRefresh = () => {
-      if (timer) return;
-      timer = setTimeout(
-        () => {
-          timer = null;
-          router.refresh();
-        },
-        DEBOUNCE_MS + Math.random() * JITTER_MS,
-      );
-    };
-
-    const ch = supabase
-      .channel(channel)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table },
-        scheduleRefresh,
-      )
-      .subscribe();
-
+    const id = setInterval(
+      () => router.refresh(),
+      POLL_MS + Math.random() * JITTER_MS,
+    );
     return () => {
-      if (timer) clearTimeout(timer);
-      supabase.removeChannel(ch);
+      clearInterval(id);
     };
   }, [table, channel, router]);
   return null;

@@ -4,7 +4,7 @@ import {
   isFreshTimestamp,
   verifyWebhookSignature,
 } from "@/lib/cashfree";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 import { markOrderPaid } from "@/lib/payments";
 
 export const dynamic = "force-dynamic";

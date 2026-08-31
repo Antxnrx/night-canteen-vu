@@ -12,9 +12,6 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-    // Scratch output from the local Supabase CLI stack (`supabase start`) —
-    // generated, minified, and not ours to lint.
-    "supabase/.temp/**",
     // Playwright MCP run artifacts.
     ".playwright-mcp/**",
   ]),

@@ -41,8 +41,8 @@ feature count.
 | Customer matching | Name (required) + short **daily order number** | Names collide; a 2-digit order number is how staff & customer sync |
 | Customer auth | Name + **optional** phone, server-issued **session token** (httpOnly cookie). **No OTP.** | Captive audience, low fraud, zero SMS cost. Session token = access control, not the phone |
 | Payment | **Razorpay, pay upfront.** Order reaches the kitchen only after payment succeeds | Auto-reconciles money, kills prank/unpaid orders, keeps state machine simple |
-| Stack | **Next.js (App Router) on Vercel + Supabase (Postgres + Realtime + Auth) + Razorpay in Next.js server routes** | One codebase, one deploy, secrets server-side, all free-tier |
-| Admin auth | **Supabase Auth**, a couple of email+password staff accounts | Per-person accountability + audit trail; appropriate once money flows |
+| Stack | **Next.js (App Router) on Vercel + MongoDB Atlas + Razorpay in Next.js server routes** | One codebase, one deploy, secrets server-side, all free-tier |
+| Admin auth | **MongoDB-backed admin auth**, a couple of email+password staff accounts | Per-person accountability + audit trail; appropriate once money flows |
 | Razorpay env | **Test mode now**, swap to live keys at launch | No KYC blocker to start building/demoing |
 | Admin device | **Phone-first** | Staff use their own phone at the truck |
 | Timeline | Flexible (this semester) | Prioritize polish/reliability over a race to a date |
@@ -72,7 +72,7 @@ feature count.
 
 | # | Feature | Priority | Why it matters |
 |---|---|---|---|
-| A1 | Staff login (Supabase Auth email+password) | P0 | Gate for everything sensitive |
+| A1 | Staff login (MongoDB-backed admin auth email+password) | P0 | Gate for everything sensitive |
 | A2 | **Live order board** (realtime), newest first | P0 | The staff's main working screen during a shift |
 | A3 | Order card: name, order #, items+qty, total, payment status, time | P0 | Everything needed to prepare & hand off an order |
 | A4 | Update order status (New → Preparing → Ready → Completed; Cancel) | P0 | The core operational loop |
@@ -104,8 +104,8 @@ feature count.
 +-------------------------------------------------------------+
         |                         |                      |
         v                         v                      v
-  [ Supabase Postgres ]   [ Supabase Realtime ]   [ Razorpay API ]
-  [ Supabase Auth      ]   (admin board live      (test mode now,
+  [ MongoDB Atlas ]   [ Polling refresh ]   [ Razorpay API ]
+  [ MongoDB-backed admin auth      ]   (admin board live      (test mode now,
    (admin accounts)         updates + customer     live at launch)
                             status updates)
 ```
@@ -115,7 +115,7 @@ feature count.
   `{ menu_item_id, quantity }` pairs — never a price or total.
 - Razorpay **key secret and webhook secret live only in Vercel env vars**, never in the client.
 - Payment truth comes from the **server-verified signature + webhook**, not the browser callback alone.
-- Realtime for the admin board via Supabase Realtime, with **short-interval polling (~5s) as a
+- Realtime for the admin board via Polling refresh, with **short-interval polling (~5s) as a
   reliable fallback** if Realtime misbehaves.
 - Money is stored as **integer paise** (never floats) to avoid rounding bugs.
 
@@ -146,7 +146,7 @@ feature count.
 `name_snapshot`, `unit_price_paise_snapshot`, `quantity`, `line_total_paise`
 *(prices are snapshotted at order time so later menu edits never rewrite order history)*
 
-**`admin_profiles`** — `user_id →` (Supabase `auth.users`), `display_name`, `role`
+**`admin_profiles`** — `user_id →` (MongoDB `admin_users`), `display_name`, `role`
 
 **`audit_log`** — `id`, `actor_user_id`, `action`, `entity_type`, `entity_id`,
 `before` (jsonb), `after` (jsonb), `created_at`
@@ -202,7 +202,7 @@ v1 handles the refund **manually via the Razorpay dashboard** (documented), not 
   cookie. The token maps to a `customer_sessions` row and is the **only** thing that lets a
   customer read *their* order status. Sessions **expire after inactivity** and are refreshed on
   activity. Phone is optional metadata, never a security control.
-- **Admin:** Supabase Auth (email+password) for a small set of staff accounts. Admin pages and
+- **Admin:** MongoDB-backed admin auth (email+password) for a small set of staff accounts. Admin pages and
   all admin API routes are gated by a server-side auth check **and** Row Level Security on the
   DB. Repeated failed logins are rate-limited / backed off.
 
@@ -216,16 +216,16 @@ v1 handles the refund **manually via the Razorpay dashboard** (documented), not 
 | Validate item IDs & quantities | Zod schema + DB check (exists, available, qty within 1..N) before order creation |
 | Prevent duplicate orders | Idempotency key + unique constraint + disabled submit |
 | Unique order IDs | UUID primary key + human-facing daily number |
-| Separate customer/admin roles | Supabase Auth + server checks + Row Level Security policies |
+| Separate customer/admin roles | MongoDB-backed admin auth + server checks + Row Level Security policies |
 | Input validation & sanitization | Zod on every API input; reject unknown fields |
-| SQL injection | Parameterized queries via Supabase client; no raw string SQL |
+| SQL injection | MongoDB driver queries; no raw string SQL |
 | XSS | React auto-escaping; sanitize any rendered free text; Content-Security-Policy header |
 | CSRF | SameSite cookies; Razorpay webhook verified by signature secret |
 | Rate limiting (public endpoints) | Limit on session-create + order-create (per session/IP). Start DB/Vercel-middleware based; Upstash free tier if needed |
 | HTTPS everywhere | Vercel default |
 | Session expiry on inactivity | `customer_sessions.expires_at`, refreshed on activity |
 | Audit trail for admin actions | `audit_log` rows on menu/price/availability changes |
-| Failed-login monitoring | Supabase Auth + lockout/backoff on repeated failures |
+| Failed-login monitoring | MongoDB-backed admin auth + lockout/backoff on repeated failures |
 | Payment integrity | Razorpay signature + webhook verification server-side; secrets in env only |
 
 ---
@@ -257,13 +257,13 @@ riskiest things — **correct pricing** and **payments** — are isolated so eac
 on its own.
 
 ### M0 — Foundations & scaffolding
-Next.js (App Router, TypeScript) + Tailwind, deployed to Vercel. Supabase project + schema
+Next.js (App Router, TypeScript) + Tailwind, deployed to Vercel. MongoDB database + collections
 migrations + env wiring. Minimal design tokens. **Why first:** nothing runs without the
 skeleton and DB.
 **Done when:** app is deployed, DB reachable, one seeded menu item renders end-to-end.
 
 ### M1 — Menu + Admin menu management
-DB tables for categories/items. Admin login (Supabase Auth) + protected admin area. Admin
+DB tables for categories/items. Admin login (MongoDB-backed admin auth) + protected admin area. Admin
 menu CRUD (add/edit/remove, price, availability, category). Customer read-only menu browse.
 **Why second:** the menu is the data everything else depends on; you can't order what doesn't
 exist, and staff need to enter real menu data to test against.
@@ -295,7 +295,7 @@ over Realtime for reliability/simplicity; upgradable later. Customer sees their 
 
 ### M5 — Admin login hardening
 Login **rate-limit + lockout** (DB-based), **Cloudflare Turnstile CAPTCHA**, **TOTP 2FA**
-(enroll + challenge via Supabase MFA), and failed-login logging with a recent-security-events
+(enroll + challenge via admin MFA), and failed-login logging with a recent-security-events
 view. Email alerts deferred to M8.
 **Why here:** the admin surface holds money + menu control; harden it before wider exposure.
 **Done when:** login resists brute-force/stuffing and requires a second factor for staff.
@@ -308,7 +308,7 @@ on-demand with SQL aggregates over **paid** orders (no rollup infra).
 
 ### M7 — Menu enhancements
 Item/category **reordering** (up/down), category **rename/delete** (safeguarded), and optional
-**item photos** (Supabase Storage; text-only items still look clean).
+**item photos** (object storage; text-only items still look clean).
 **Done when:** staff fully control menu structure + imagery from their phone.
 
 ### M8 — Launch hardening
@@ -322,7 +322,7 @@ alerts for failed logins, CSP, and the **live Razorpay keys + webhook** swap.
 ## 11. Non-functional requirements
 - Fast on campus 4G; mobile-first performance budget.
 - Realtime updates within a couple of seconds; graceful polling fallback.
-- Stays within free tiers (Vercel, Supabase, Razorpay test mode).
+- Stays within free tiers (Vercel, MongoDB Atlas, payment sandbox).
 - Correct money handling (integer paise, server-authoritative totals).
 
 ---

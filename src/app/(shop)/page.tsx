@@ -44,7 +44,7 @@ function MenuEmptyState({ configured }: { configured: boolean }) {
       <p className="mx-auto mt-1.5 max-w-xs text-sm text-muted">
         {configured
           ? "No items are on the menu yet. Check back in a bit."
-          : "Almost there — finish the Supabase setup in SETUP.md to load the menu."}
+          : "Almost there — finish the MongoDB setup in SETUP.md to load the menu."}
       </p>
     </div>
   );

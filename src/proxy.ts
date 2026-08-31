@@ -1,6 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { env } from "@/lib/env";
 import {
   check,
   identityFor,
@@ -9,9 +7,8 @@ import {
 } from "@/lib/proxy-rate-limit";
 
 /**
- * Refreshes the Supabase auth session on every request (so server components
- * see a valid session) and gates the /admin area to signed-in users.
- * Role (is_admin) is enforced again in the admin layout + by RLS.
+ * Applies a site-wide throttle and gates the /admin area to signed-in users.
+ * The admin layout verifies the MongoDB-backed session and role again.
  * (Next 16 "proxy" convention — formerly middleware.)
  */
 export async function proxy(request: NextRequest) {
@@ -38,52 +35,24 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  let response = NextResponse.next({ request });
-
-  // Before Supabase is configured, don't attempt auth — just pass through.
-  if (!env.supabaseUrl || !env.supabaseAnonKey) {
-    return response;
-  }
-
-  const supabase = createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        for (const { name, value } of cookiesToSet) {
-          request.cookies.set(name, value);
-        }
-        response = NextResponse.next({ request });
-        for (const { name, value, options } of cookiesToSet) {
-          response.cookies.set(name, value, options);
-        }
-      },
-    },
-  });
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   const isAdminArea =
     pathname.startsWith("/admin") && !pathname.startsWith("/admin/login");
 
-  if (isAdminArea && !user) {
+  if (isAdminArea && !request.cookies.get("nc_admin")?.value) {
     const url = request.nextUrl.clone();
     url.pathname = "/admin/login";
     url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
 
-  return response;
+  return NextResponse.next({ request });
 }
 
 export const config = {
   // Run on everything except static assets and media files.
   //
   // Media matters as much as images here: a video is fetched in range requests,
-  // and without this every one of them would spend a Supabase `getUser()` round
+  // and without this every one of them would spend a rate-limit slot
   // trip and a slot in the rate limiter to serve a file from `public/`.
   matcher: [
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|mp4|webm)$).*)",

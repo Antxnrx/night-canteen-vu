@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { getSession } from "@/lib/session";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 import { formatPaise } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 import { AutoRefresh } from "@/components/auto-refresh";

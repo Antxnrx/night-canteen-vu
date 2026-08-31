@@ -1,9 +1,8 @@
 "use server";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 import { ensureSession } from "@/lib/session";
-import { isSupabaseConfigured, isCashfreeConfigured } from "@/lib/env";
+import { isMongoConfigured, isCashfreeConfigured } from "@/lib/env";
 import { env } from "@/lib/env";
 import { createCashfreeOrder, fetchCashfreeOrder } from "@/lib/cashfree";
 import { getStoreOpen } from "@/lib/store";
@@ -42,7 +41,7 @@ export type CreateOrderResult =
 export async function createOrder(
   input: CreateOrderInput,
 ): Promise<CreateOrderResult> {
-  if (!isSupabaseConfigured()) {
+  if (!isMongoConfigured()) {
     return { error: "Ordering isn't available yet. Please try again later." };
   }
 
@@ -220,7 +219,7 @@ export async function createOrder(
  * identifier despite the name.
  */
 async function ensurePaymentSession(
-  supabase: SupabaseClient,
+  supabase: ReturnType<typeof createAdminClient>,
   params: {
     orderId: string;
     alreadyCreated: boolean;

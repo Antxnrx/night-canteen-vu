@@ -1,5 +1,5 @@
 import "server-only";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { createAdminClient } from "@/lib/mongodb/client";
 
 type AuditEntry = {
   actorId: string;
@@ -17,7 +17,7 @@ type AuditEntry = {
  * a failed audit write must not fail the underlying action.
  */
 export async function logAudit(
-  supabase: SupabaseClient,
+  supabase: ReturnType<typeof createAdminClient>,
   entry: AuditEntry,
 ): Promise<void> {
   const { error } = await supabase.from("audit_log").insert({

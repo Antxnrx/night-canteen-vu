@@ -2,8 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/env";
+import { createClient } from "@/lib/mongodb/client";
+import { isMongoConfigured } from "@/lib/env";
 import { allow, clientIp } from "@/lib/rate-limit";
 import { isValidIdentifier, toAdminEmail } from "@/lib/admin-identity";
 
@@ -41,8 +41,8 @@ export async function signIn(
   if (!parsed.success) {
     return { error: "Enter your username and password." };
   }
-  if (!isSupabaseConfigured()) {
-    return { error: "Supabase isn't set up yet. See SETUP.md." };
+  if (!isMongoConfigured()) {
+    return { error: "MongoDB isn't set up yet. See SETUP.md." };
   }
 
   const identifier = parsed.data.username.trim();

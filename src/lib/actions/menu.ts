@@ -1,6 +1,5 @@
 "use server";
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { getCurrentAdmin } from "@/lib/admin";
@@ -87,7 +86,7 @@ function parseVariants(
 
 /** Replaces an item's variants (best-effort; won't fail item CRUD). */
 async function syncVariants(
-  supabase: SupabaseClient,
+  supabase: NonNullable<Awaited<ReturnType<typeof getCurrentAdmin>>>["supabase"],
   itemId: string,
   variants: { name: string; price_paise: number }[],
 ) {

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/env";
+import { createClient } from "@/lib/mongodb/client";
+import { isMongoConfigured } from "@/lib/env";
 import { getStoreOpen } from "@/lib/store";
 import { signOut } from "@/lib/actions/auth";
 import { AdminShell } from "@/components/admin/admin-shell";
@@ -14,8 +14,8 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  // Before Supabase is wired, show a setup hint instead of crashing.
-  if (!isSupabaseConfigured()) {
+  // Before MongoDB is wired, show a setup hint instead of crashing.
+  if (!isMongoConfigured()) {
     return (
       <div className="flex min-h-full items-center justify-center bg-primary-deep px-5 py-16">
         <div className="w-full max-w-sm rounded-2xl bg-surface p-6 text-center shadow-float">
@@ -23,7 +23,7 @@ export default async function DashboardLayout({
             Almost there
           </h1>
           <p className="mt-1.5 text-sm text-muted">
-            Connect Supabase to use the admin. Follow the steps in{" "}
+            Connect MongoDB to use the admin. Follow the steps in{" "}
             <span className="font-medium">SETUP.md</span>.
           </p>
         </div>

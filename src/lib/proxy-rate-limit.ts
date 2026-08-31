@@ -27,7 +27,7 @@
  *     Credential attacks spread across many IPs are caught instead by the
  *     per-account database limit in `signIn`.
  *
- * No dependency on Supabase: plain memory, holds through any database change.
+ * No dependency on MongoDB: plain memory, holds through any database change.
  */
 
 export type Tier = "auth" | "api" | "page";

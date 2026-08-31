@@ -1,10 +1,10 @@
 import "server-only";
-import { createAdminClient } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/env";
+import { createAdminClient } from "@/lib/mongodb/client";
+import { isMongoConfigured } from "@/lib/env";
 
 /** Whether the canteen is currently accepting orders. Defaults open. */
 export async function getStoreOpen(): Promise<boolean> {
-  if (!isSupabaseConfigured()) return true;
+  if (!isMongoConfigured()) return true;
   const supabase = createAdminClient();
   const { data } = await supabase
     .from("store_settings")

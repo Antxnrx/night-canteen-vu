@@ -1,6 +1,6 @@
 "use server";
 
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 import { fetchCashfreeOrder } from "@/lib/cashfree";
 import { markOrderPaid } from "@/lib/payments";
 

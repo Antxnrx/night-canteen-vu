@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/mongodb/client";
 import { BOARD_SELECT, BOARD_FILTER } from "@/lib/order-status";
 import { sweepOrders } from "@/lib/sweep";
 

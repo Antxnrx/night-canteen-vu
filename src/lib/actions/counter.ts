@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getCurrentAdmin } from "@/lib/admin";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 import { logAudit } from "@/lib/audit";
 import { assignOrderNumber } from "@/lib/payments";
 import { priceLines, type RawLine } from "@/lib/pricing";

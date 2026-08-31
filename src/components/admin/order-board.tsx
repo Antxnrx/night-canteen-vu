@@ -10,7 +10,6 @@ import {
   type RefObject,
 } from "react";
 import { setOrderStatus, confirmCashPayment } from "@/lib/actions/order-status";
-import { createClient } from "@/lib/supabase/client";
 import {
   READY_WINDOW_MS,
   isCooking,
@@ -20,7 +19,7 @@ import {
 import { formatPaise } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
-const POLL_MS = 5000; // safety net; Realtime handles the instant path
+const POLL_MS = 5000;
 const TICK_MS = 10000; // drives the auto-clear countdown
 const STALE_MS = 30 * 60 * 1000; // unpaid > 30 min → greyed
 
@@ -54,37 +53,14 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
     }
   }, []);
 
-  // Realtime push + fallback poll + focus refresh.
+  // Poll + focus refresh for MongoDB-backed order updates.
   useEffect(() => {
-    const supabase = createClient();
-    let channel: ReturnType<typeof supabase.channel> | null = null;
-    let cancelled = false;
-
-    // Authorize BEFORE subscribing. `orders` has no anon policy, so a channel
-    // that opens unauthenticated silently receives nothing and the board would
-    // quietly fall back to the 5s poll for the rest of the night.
-    (async () => {
-      const { data } = await supabase.auth.getSession();
-      if (cancelled) return;
-      if (data.session) supabase.realtime.setAuth(data.session.access_token);
-      channel = supabase
-        .channel("admin-orders")
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "orders" },
-          () => refresh(),
-        )
-        .subscribe();
-    })();
-
     const id = setInterval(refresh, POLL_MS);
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
-      cancelled = true;
-      if (channel) supabase.removeChannel(channel);
       clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };

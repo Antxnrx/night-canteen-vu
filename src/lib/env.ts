@@ -5,10 +5,10 @@
  * (service role key, Cashfree secrets) stays server-side only.
  */
 export const env = {
-  supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-  supabaseAnonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-  // Server-only. Never import these into a client component.
-  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY ?? "",
+  mongodbUri: process.env.MONGODB_URI ?? "",
+  mongodbDbName: process.env.MONGODB_DB_NAME ?? "night_canteen",
+  adminUsername: process.env.ADMIN_USERNAME ?? "",
+  adminPassword: process.env.ADMIN_PASSWORD ?? "",
   // Cashfree Payments. The secret key doubles as the webhook signing key, so
   // it must never reach the browser.
   cashfreeAppId: process.env.CASHFREE_APP_ID ?? "",
@@ -20,9 +20,9 @@ export const env = {
     | "production",
 } as const;
 
-/** True once the public Supabase URL + anon key are present. */
-export function isSupabaseConfigured(): boolean {
-  return Boolean(env.supabaseUrl && env.supabaseAnonKey);
+/** True once the MongoDB connection string is present. */
+export function isMongoConfigured(): boolean {
+  return Boolean(env.mongodbUri);
 }
 
 /** True once Cashfree server keys are present (needed to take payments). */

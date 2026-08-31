@@ -1,6 +1,6 @@
 import "server-only";
 import { headers } from "next/headers";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { createAdminClient } from "@/lib/mongodb/client";
 
 /**
  * DB-backed fixed-window rate limiting.

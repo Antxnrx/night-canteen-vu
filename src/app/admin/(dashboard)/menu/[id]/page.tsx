@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/mongodb/client";
 import { updateItem } from "@/lib/actions/menu";
 import { ItemForm } from "@/components/admin/item-form";
 import { BackHeader } from "@/components/admin/back-header";

@@ -1,7 +1,7 @@
 /**
  * Staff sign in with a username, not an email.
  *
- * Supabase Auth keys accounts on email, so a username is mapped onto a stable
+ * MongoDB Auth keys accounts on email, so a username is mapped onto a stable
  * internal address: `nightcanteen006969` → `nightcanteen006969@<domain>`. The
  * domain is never sent mail and doesn't need to be a domain anyone owns — it
  * exists only to satisfy the auth provider's format.
@@ -16,7 +16,7 @@
 export const ADMIN_EMAIL_DOMAIN =
   process.env.ADMIN_EMAIL_DOMAIN ?? "nightcanteen.local";
 
-/** Username or email → the email Supabase Auth actually stores. */
+/** Username or email → the email MongoDB Auth actually stores. */
 export function toAdminEmail(input: string): string {
   const value = input.trim().toLowerCase();
   if (!value) return "";

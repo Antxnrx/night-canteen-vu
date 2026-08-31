@@ -1,6 +1,6 @@
 import "server-only";
-import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/env";
+import { createClient } from "@/lib/mongodb/client";
+import { isMongoConfigured } from "@/lib/env";
 
 export type MenuVariant = {
   id: string;
@@ -42,11 +42,11 @@ const VARIANT_COLUMNS = "id,item_id,name,price_paise,is_available,sort_order";
 
 /**
  * Loads the full menu grouped by category, with size variants attached.
- * Returns `configured:false` before Supabase is wired. Degrades gracefully if
+ * Returns `configured:false` before MongoDB is wired. Degrades gracefully if
  * the variants table doesn't exist yet (items simply have no variants).
  */
 export async function getMenu(): Promise<Menu> {
-  if (!isSupabaseConfigured()) {
+  if (!isMongoConfigured()) {
     return { configured: false, categories: [] };
   }
 
