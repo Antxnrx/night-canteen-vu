@@ -161,7 +161,7 @@ export async function fetchCashfreeOrder(
 
 /**
  * Verifies a webhook: base64(HMAC-SHA256(timestamp + rawBody)) keyed with the
- * client secret, per Cashfree's own reference implementation. The raw body must
+ * client secret, per Cashfree's reference implementation. The raw body must
  * be the exact bytes received — re-serialising parsed JSON changes the hash.
  */
 export function verifyWebhookSignature(
@@ -169,21 +169,30 @@ export function verifyWebhookSignature(
   timestamp: string,
   signature: string,
 ): boolean {
-  if (!env.cashfreeSecretKey || !timestamp || !signature) return false;
+  if (!env.cashfreeSecretKey || !timestamp || !signature) {
+    console.warn("verifyWebhookSignature: Missing secretKey, timestamp, or signature header.");
+    return false;
+  }
   const expected = createHmac("sha256", env.cashfreeSecretKey)
     .update(timestamp + rawBody)
     .digest("base64");
-  return safeEqual(expected, signature);
+  const valid = safeEqual(expected, signature);
+  if (!valid) {
+    console.warn("verifyWebhookSignature: Signature mismatch.");
+  }
+  return valid;
 }
 
 /**
  * Rejects webhooks older than five minutes so a captured delivery can't be
- * replayed later.
+ * replayed later. Handles both second and millisecond timestamps from Cashfree.
  */
 export function isFreshTimestamp(timestamp: string, maxAgeSeconds = 300): boolean {
-  const ts = Number(timestamp);
-  if (!Number.isFinite(ts)) return false;
-  const ageSeconds = Math.abs(Date.now() / 1000 - ts);
+  const raw = Number(timestamp);
+  if (!Number.isFinite(raw)) return false;
+  // Convert milliseconds (> 10^11) to seconds if needed
+  const tsSeconds = raw > 1e11 ? raw / 1000 : raw;
+  const ageSeconds = Math.abs(Date.now() / 1000 - tsSeconds);
   return ageSeconds <= maxAgeSeconds;
 }
 
