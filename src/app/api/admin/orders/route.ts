@@ -5,7 +5,7 @@ import { sweepOrders } from "@/lib/sweep";
 
 export const dynamic = "force-dynamic";
 
-/** GET /api/admin/orders — board orders (active paid + cash-awaiting). Admin only. */
+/** GET /api/admin/orders — board orders (active paid). Admin only. */
 export async function GET() {
   const supabase = await createClient();
 

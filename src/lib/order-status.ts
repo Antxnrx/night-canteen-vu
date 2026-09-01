@@ -60,13 +60,11 @@ export const ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
  */
 export function customerStatus(
   status: OrderStatus,
-  method: "upi" | "cash" | null,
+  _method?: "upi" | null,
 ): { label: string; tone: StatusTone } {
   switch (status) {
     case "pending_payment":
-      return method === "cash"
-        ? { label: "Pay at the counter", tone: "accent" }
-        : { label: "Confirming payment", tone: "accent" };
+      return { label: "Confirming payment", tone: "accent" };
     case "new":
     case "preparing":
       return { label: "Cooking", tone: "primary" };
@@ -90,17 +88,16 @@ export type BoardOrder = {
   customer_phone: string | null;
   status: OrderStatus;
   payment_status: PaymentStatus;
-  payment_method: "upi" | "cash" | null;
+  payment_method: "upi" | null;
   total_paise: number;
   created_at: string;
   ready_at: string | null;
   order_items: { name_snapshot: string; quantity: number }[];
 };
 
-// Board query: active paid orders + cash orders awaiting counter payment.
+// Board query: active paid orders.
 // Ready orders past their window are retired by `sweep_orders()` before this
 // query runs, so no time filter is needed here.
 export const BOARD_SELECT =
   "id,daily_order_number,customer_name,customer_phone,status,payment_status,payment_method,total_paise,created_at,ready_at,order_items(name_snapshot,quantity)";
-export const BOARD_FILTER =
-  "status.in.(new,preparing,ready),and(status.eq.pending_payment,payment_method.eq.cash)";
+export const BOARD_FILTER = "status.in.(new,preparing,ready)";

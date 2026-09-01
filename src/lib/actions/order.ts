@@ -14,14 +14,13 @@ export type CreateOrderInput = {
   items: { id: string; variantId?: string | null; qty: number }[];
   name: string;
   phone?: string;
-  paymentMethod: "upi" | "cash";
+  paymentMethod?: "upi";
   idempotencyKey: string;
 };
 
 export type CreateOrderResult =
   | { error: string }
   | { alreadyPaid: true; orderId: string }
-  | { cash: true; orderId: string }
   | {
       orderId: string;
       /** Handed to the Cashfree JS SDK to open checkout. */
@@ -45,9 +44,7 @@ export async function createOrder(
     return { error: "Ordering isn't available yet. Please try again later." };
   }
 
-  const method: "upi" | "cash" =
-    input.paymentMethod === "cash" ? "cash" : "upi";
-  if (method === "upi" && !isCashfreeConfigured()) {
+  if (!isCashfreeConfigured()) {
     return { error: "UPI payments aren't set up yet. Please try again soon." };
   }
 
@@ -83,9 +80,6 @@ export async function createOrder(
       if (existing.payment_status === "paid") {
         return { alreadyPaid: true, orderId: existing.id };
       }
-      if (existing.payment_method === "cash") {
-        return { cash: true, orderId: existing.id };
-      }
       const session = await ensurePaymentSession(supabase, {
         orderId: existing.id,
         alreadyCreated: Boolean(existing.razorpay_order_id),
@@ -108,11 +102,6 @@ export async function createOrder(
   // Past the retry path, so this only ever counts genuinely NEW orders — a
   // customer re-opening payment on bad wifi reuses their idempotency key above
   // and is never the one who gets throttled.
-  //
-  // Cash orders reach the board without any payment, so without a limit one
-  // person can bury the kitchen in junk. Keyed on the session where there is
-  // one, otherwise the IP: a fresh session per request would defeat the first
-  // bucket on its own.
   const existingSession = await getSession();
   const bucket = existingSession
     ? `order:s:${existingSession.id}`
@@ -152,7 +141,7 @@ export async function createOrder(
       customer_phone: phone,
       status: "pending_payment",
       payment_status: "created",
-      payment_method: method,
+      payment_method: "upi",
       subtotal_paise: subtotal,
       total_paise: total,
       idempotency_key: input.idempotencyKey || null,
@@ -178,11 +167,6 @@ export async function createOrder(
   if (itemsInsertErr) {
     await supabase.from("orders").delete().eq("id", order.id);
     return { error: "Couldn't place your order. Please try again." };
-  }
-
-  // Cash: order waits on the board for staff to confirm receipt.
-  if (method === "cash") {
-    return { cash: true, orderId: order.id };
   }
 
   const paymentSession = await ensurePaymentSession(supabase, {

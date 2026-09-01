@@ -11,8 +11,8 @@ export default async function ShopLayout({
   children: React.ReactNode;
 }) {
   // Closing the canteen stops NEW orders — it does not abandon the people who
-  // already have one. Anyone still waiting on food (or still owing cash at the
-  // counter) goes to their order, not to a wall telling them we're shut.
+  // already have one. Anyone still waiting on food goes to their order, not to a
+  // wall telling them we're shut.
   if (!(await getStoreOpen())) {
     const active = await getActiveOrders();
     redirect(

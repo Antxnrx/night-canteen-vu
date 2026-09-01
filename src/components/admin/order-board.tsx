@@ -9,7 +9,7 @@ import {
   useTransition,
   type RefObject,
 } from "react";
-import { setOrderStatus, confirmCashPayment } from "@/lib/actions/order-status";
+import { setOrderStatus } from "@/lib/actions/order-status";
 import {
   READY_WINDOW_MS,
   isCooking,
@@ -111,25 +111,6 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
     [refresh],
   );
 
-  const cashReceived = useCallback(
-    (order: BoardOrder) => {
-      setError(null);
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === order.id
-            ? { ...o, payment_status: "paid" as const, status: "new" as OrderStatus }
-            : o,
-        ),
-      );
-      startTransition(async () => {
-        const res = await confirmCashPayment(order.id);
-        if (!res.ok) setError(res.error ?? "Couldn't confirm the cash payment.");
-        refresh();
-      });
-    },
-    [refresh],
-  );
-
   const groups = useMemo(() => {
     const byAge = (a: BoardOrder, b: BoardOrder) =>
       new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
@@ -144,13 +125,12 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
     };
 
     return {
-      awaiting: orders.filter((o) => !paid(o)).sort(byAge),
       cooking: orders.filter((o) => paid(o) && isCooking(o.status)).sort(byAge),
       ready: orders.filter((o) => paid(o) && readyLive(o)).sort(byAge),
     };
   }, [orders, now]);
 
-  const total = groups.awaiting.length + groups.cooking.length + groups.ready.length;
+  const total = groups.cooking.length + groups.ready.length;
 
   return (
     <div className="pb-24">
@@ -173,26 +153,6 @@ export function OrderBoard({ initial }: { initial: BoardOrder[] }) {
         </div>
       ) : (
         <div className="space-y-7">
-          {groups.awaiting.length > 0 && (
-            <Section
-              icon={<CashIcon className="size-5" />}
-              title="Take cash"
-              count={groups.awaiting.length}
-              tone="accent"
-            >
-              {groups.awaiting.map((o) => (
-                <CashCard
-                  key={o.id}
-                  order={o}
-                  now={now}
-                  busy={pending}
-                  onCashReceived={cashReceived}
-                  onCancel={cancel}
-                />
-              ))}
-            </Section>
-          )}
-
           {groups.cooking.length > 0 && (
             <Section
               icon={<PotIcon className="size-5" />}
@@ -361,45 +321,6 @@ function CookingCard({
   );
 }
 
-function CashCard({
-  order,
-  now,
-  busy,
-  onCashReceived,
-  onCancel,
-}: {
-  order: BoardOrder;
-  now: number;
-  busy: boolean;
-  onCashReceived: (o: BoardOrder) => void;
-  onCancel: (o: BoardOrder) => void;
-}) {
-  const stale = now - new Date(order.created_at).getTime() > STALE_MS;
-
-  return (
-    <article
-      className={cn(
-        "animate-enter rounded-2xl border-2 border-accent bg-surface p-4 shadow-card",
-        stale && "opacity-55",
-      )}
-    >
-      <CardHead order={order} now={now} />
-
-      <button
-        type="button"
-        onClick={() => onCashReceived(order)}
-        disabled={busy}
-        className="mt-4 flex min-h-16 w-full items-center justify-center gap-3 rounded-xl bg-accent text-xl font-bold uppercase tracking-wide text-on-accent transition-transform duration-150 active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-accent/40"
-      >
-        <CashIcon className="size-7" />
-        Got {formatPaise(order.total_paise)}
-      </button>
-
-      <CardFoot order={order} busy={busy} onCancel={onCancel} />
-    </article>
-  );
-}
-
 function ReadyCard({ order, now }: { order: BoardOrder; now: number }) {
   const leftMs = order.ready_at
     ? READY_WINDOW_MS - (now - new Date(order.ready_at).getTime())
@@ -511,16 +432,6 @@ function PotIcon({ className }: { className?: string }) {
       <path d="M4 10h16v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5v-5Z" />
       <path d="M2 10h20" />
       <path d="M9 6.5c0-1 1-1.5 1-2.5M14 6.5c0-1 1-1.5 1-2.5" />
-    </svg>
-  );
-}
-
-function CashIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="2" y="6" width="20" height="12" rx="2" />
-      <circle cx="12" cy="12" r="2.5" />
-      <path d="M6 12h.01M18 12h.01" />
     </svg>
   );
 }

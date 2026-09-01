@@ -9,7 +9,7 @@ export type ActiveOrderInfo = {
   id: string;
   daily_order_number: number | null;
   status: OrderStatus;
-  payment_method: "upi" | "cash" | null;
+  payment_method: "upi" | null;
 };
 
 /**

@@ -8,17 +8,17 @@ export type ActiveOrder = {
   id: string;
   daily_order_number: number | null;
   status: OrderStatus;
-  payment_method: "upi" | "cash" | null;
+  payment_method: "upi" | null;
   total_paise: number;
   created_at: string;
 };
 
 /**
- * All of the current customer's *active* orders (paid & not yet collected, or
- * a cash order awaiting payment), newest first. Abandoned UPI checkouts are
- * excluded. Used to surface a "track your order(s)" entry point so a customer
- * never loses an order — including one placed before another that's still
- * active, which a single-order lookup would otherwise hide.
+ * All of the current customer's *active* orders (paid & not yet collected),
+ * newest first. Abandoned UPI checkouts are excluded. Used to surface a
+ * "track your order(s)" entry point so a customer never loses an order —
+ * including one placed before another that's still active, which a single-order
+ * lookup would otherwise hide.
  */
 export async function getActiveOrders(): Promise<ActiveOrder[]> {
   if (!isMongoConfigured()) return [];
@@ -30,7 +30,7 @@ export async function getActiveOrders(): Promise<ActiveOrder[]> {
     .from("orders")
     .select("id,daily_order_number,status,payment_method,total_paise,created_at")
     .eq("session_id", session.id)
-    .or("status.in.(new,ready),and(status.eq.pending_payment,payment_method.eq.cash)")
+    .or("status.in.(new,ready)")
     .order("created_at", { ascending: false });
 
   return (data as ActiveOrder[]) ?? [];

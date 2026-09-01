@@ -72,17 +72,11 @@ function parseFields(select: string | undefined): string[] | null {
 }
 
 function matchOr(doc: Record<string, unknown>, expr: string): boolean {
-  if (expr === "status.in.(new,preparing,ready),and(status.eq.pending_payment,payment_method.eq.cash)") {
-    return (
-      ["new", "preparing", "ready"].includes(String(doc.status)) ||
-      (doc.status === "pending_payment" && doc.payment_method === "cash")
-    );
+  if (expr.startsWith("status.in.(new,preparing,ready)")) {
+    return ["new", "preparing", "ready"].includes(String(doc.status));
   }
-  if (expr === "status.in.(new,ready),and(status.eq.pending_payment,payment_method.eq.cash)") {
-    return (
-      ["new", "ready"].includes(String(doc.status)) ||
-      (doc.status === "pending_payment" && doc.payment_method === "cash")
-    );
+  if (expr.startsWith("status.in.(new,ready)")) {
+    return ["new", "ready"].includes(String(doc.status));
   }
   return true;
 }

@@ -24,7 +24,6 @@ export function CounterBill({ menu }: { menu: MenuCategoryWithItems[] }) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [method, setMethod] = useState<"cash" | "upi">("cash");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneNumber, setDoneNumber] = useState<number | null>(null);
@@ -56,7 +55,6 @@ export function CounterBill({ menu }: { menu: MenuCategoryWithItems[] }) {
     setBill([]);
     setName("");
     setPhone("");
-    setMethod("cash");
     setPhase("build");
     setError(null);
     setDone(false);
@@ -75,7 +73,7 @@ export function CounterBill({ menu }: { menu: MenuCategoryWithItems[] }) {
       items: bill.map((l) => ({ id: l.id, variantId: l.variantId, qty: l.qty })),
       name: name.trim(),
       phone: phone.trim() || undefined,
-      paymentMethod: method,
+      paymentMethod: "upi",
     });
     setBusy(false);
     if ("error" in res) {
@@ -95,7 +93,7 @@ export function CounterBill({ menu }: { menu: MenuCategoryWithItems[] }) {
           {doneNumber != null ? `#${doneNumber}` : "—"}
         </p>
         <p className="mt-2 text-sm text-muted">
-          {formatPaise(total)} · {method === "cash" ? "Cash" : "UPI"} · on the board now
+          {formatPaise(total)} · UPI · on the board now
         </p>
         <Button onClick={reset} size="lg" className="mt-6 w-full">
           New bill
@@ -246,10 +244,6 @@ export function CounterBill({ menu }: { menu: MenuCategoryWithItems[] }) {
               <Field label="Phone (optional)" htmlFor="cust-phone">
                 <Input id="cust-phone" value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" maxLength={15} placeholder="For a call-out" />
               </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <MethodBtn active={method === "cash"} onClick={() => setMethod("cash")}>Cash</MethodBtn>
-                <MethodBtn active={method === "upi"} onClick={() => setMethod("upi")}>UPI</MethodBtn>
-              </div>
             </div>
 
             {error && (
@@ -259,7 +253,7 @@ export function CounterBill({ menu }: { menu: MenuCategoryWithItems[] }) {
             )}
 
             <Button onClick={charge} loading={busy} size="lg" className="mt-4 w-full">
-              {busy ? "Creating…" : `Charge ${formatPaise(total)} · ${method === "cash" ? "Cash" : "UPI"}`}
+              {busy ? "Creating…" : `Charge ${formatPaise(total)} · UPI`}
             </Button>
             <button
               type="button"
@@ -290,32 +284,6 @@ function StepBtn({
       onClick={onClick}
       aria-label={label}
       className="grid size-7 place-items-center rounded-md text-base font-semibold text-foreground transition-transform hover:bg-border active:scale-90"
-    >
-      {children}
-    </button>
-  );
-}
-
-function MethodBtn({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "rounded-xl border py-2.5 text-center text-sm font-semibold transition-[transform,background-color,border-color] duration-150 active:scale-[0.98]",
-        active
-          ? "border-primary bg-primary/5 text-foreground ring-1 ring-primary/30"
-          : "border-border-strong text-muted hover:bg-surface-2",
-      )}
     >
       {children}
     </button>

@@ -47,20 +47,13 @@ export default async function OrderPage({
     .order("name_snapshot");
 
   const status = (order.status as OrderStatus) ?? "pending_payment";
-  const method = order.payment_method as "upi" | "cash" | null;
-  const cs = customerStatus(status, method);
+  const cs = customerStatus(status);
   const pending = status === "pending_payment";
   const done = status === "completed" || status === "cancelled";
   const ready = status === "ready";
   const cooking = isCooking(status);
   const paid = order.payment_status === "paid";
-  const payLabel = paid
-    ? method === "cash"
-      ? "Paid · Cash"
-      : "Paid · UPI"
-    : method === "cash"
-      ? "Cash at counter"
-      : "Payment pending";
+  const payLabel = paid ? "Paid · UPI" : "Payment pending";
 
   return (
     <div className="flex min-h-full flex-col">
@@ -114,9 +107,7 @@ export default async function OrderPage({
 
           {pending && (
             <p className="mx-auto mt-4 max-w-xs text-sm text-muted">
-              {method === "cash"
-                ? "Pay at the counter — we'll start the moment staff confirm your cash."
-                : "Confirming your payment. This updates on its own in a moment."}
+              Confirming your payment. This updates on its own in a moment.
             </p>
           )}
           {status === "cancelled" && (

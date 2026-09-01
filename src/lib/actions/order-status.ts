@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentAdmin } from "@/lib/admin";
 import { logAudit } from "@/lib/audit";
-import { markOrderPaid } from "@/lib/payments";
 import { ALLOWED_TRANSITIONS, type OrderStatus } from "@/lib/order-status";
 
 /**
@@ -59,46 +58,6 @@ export async function setOrderStatus(
     summary: `Order ${label}: ${from} → ${toStatus}`,
     before: { status: from },
     after: { status: toStatus },
-  });
-
-  revalidatePath("/admin/orders");
-  return { ok: true };
-}
-
-/**
- * Confirms a cash order was paid at the counter — moves it into the kitchen
- * queue (status=new) and assigns its daily number. Admin-only, audit-logged.
- */
-export async function confirmCashPayment(
-  orderId: string,
-): Promise<{ ok: boolean; error?: string }> {
-  const admin = await getCurrentAdmin();
-  if (!admin) {
-    return { ok: false, error: "Your session expired. Please sign in again." };
-  }
-
-  const { data: order } = await admin.supabase
-    .from("orders")
-    .select("id,payment_status,payment_method,daily_order_number")
-    .eq("id", orderId)
-    .maybeSingle();
-  if (!order) return { ok: false, error: "Order not found." };
-  if (order.payment_method !== "cash") {
-    return { ok: false, error: "This isn't a cash order." };
-  }
-  if (order.payment_status === "paid") return { ok: true }; // already confirmed
-
-  await markOrderPaid(orderId, null);
-
-  const label = order.daily_order_number
-    ? `#${order.daily_order_number}`
-    : orderId.slice(0, 8);
-  await logAudit(admin.supabase, {
-    actorId: admin.user.id,
-    action: "order.cash_received",
-    entityType: "order",
-    entityId: orderId,
-    summary: `Cash received for order ${label}`,
   });
 
   revalidatePath("/admin/orders");

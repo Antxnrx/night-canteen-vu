@@ -8,7 +8,7 @@ export default async function ClosedPage() {
   // If we've reopened, don't strand people here.
   if (await getStoreOpen()) redirect("/");
 
-  // Closed, but this person already has food coming (or cash to hand over).
+  // Closed, but this person already has food coming.
   // They should be watching their order, not reading a goodbye note.
   const active = await getActiveOrders();
   if (active.length > 1) redirect("/orders");

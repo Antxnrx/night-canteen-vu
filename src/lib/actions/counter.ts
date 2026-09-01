@@ -11,7 +11,7 @@ export type StaffOrderInput = {
   items: RawLine[];
   name: string;
   phone?: string;
-  paymentMethod: "upi" | "cash";
+  paymentMethod?: "upi";
 };
 
 export type StaffOrderResult =
@@ -20,8 +20,8 @@ export type StaffOrderResult =
 
 /**
  * Creates a counter (staff-billed) order for a walk-up customer. Staff attest
- * the payment (cash taken, or UPI received), so it's created already PAID and
- * drops straight onto the board with a number. Same server-side pricing as QR.
+ * the payment (UPI received), so it's created already PAID and drops straight
+ * onto the board with a number. Same server-side pricing as QR.
  */
 export async function createStaffOrder(
   input: StaffOrderInput,
@@ -37,7 +37,6 @@ export async function createStaffOrder(
   if (phone && !/^[0-9+\-\s]{6,15}$/.test(phone)) {
     return { error: "Enter a valid phone number, or leave it blank." };
   }
-  const method: "upi" | "cash" = input.paymentMethod === "cash" ? "cash" : "upi";
 
   // Service role for writes + the number counter (bypasses RLS; admin verified above).
   const supabase = createAdminClient();
@@ -54,7 +53,7 @@ export async function createStaffOrder(
       customer_phone: phone,
       status: "new",
       payment_status: "paid",
-      payment_method: method,
+      payment_method: "upi",
       source: "counter",
       subtotal_paise: total,
       total_paise: total,
@@ -83,7 +82,7 @@ export async function createStaffOrder(
     action: "order.counter_create",
     entityType: "order",
     entityId: order.id,
-    summary: `Counter bill ${orderNumber ? `#${orderNumber}` : ""} · ${method} · ₹${(total / 100).toFixed(0)}`,
+    summary: `Counter bill ${orderNumber ? `#${orderNumber}` : ""} · UPI · ₹${(total / 100).toFixed(0)}`,
   });
 
   revalidatePath("/admin/orders");

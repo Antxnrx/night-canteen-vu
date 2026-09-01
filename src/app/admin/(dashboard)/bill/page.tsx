@@ -12,7 +12,7 @@ export default async function BillPage() {
       <div className="mb-4">
         <h1 className="text-xl font-semibold text-foreground">New bill</h1>
         <p className="mt-0.5 text-sm text-muted">
-          Tap items, then take cash or UPI — the order hits the board with a number.
+          Tap items, then collect payment via UPI — the order hits the board with a number.
         </p>
       </div>
 

@@ -12,13 +12,10 @@ import { Button, buttonClasses } from "@/components/ui/button";
 import { Input, Field } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
 
-type Method = "upi" | "cash";
-
 export function CheckoutForm() {
   const { lines, subtotalPaise, count, setQty, clear, hydrated } = useCart();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [method, setMethod] = useState<Method>("upi");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const router = useRouter();
@@ -59,7 +56,7 @@ export function CheckoutForm() {
       items: lines.map((l) => ({ id: l.id, variantId: l.variantId, qty: l.qty })),
       name: name.trim(),
       phone: phone.trim(),
-      paymentMethod: method,
+      paymentMethod: "upi",
       idempotencyKey,
     });
 
@@ -68,8 +65,8 @@ export function CheckoutForm() {
       setBusy(false);
       return;
     }
-    // Cash order (or already paid) → straight to the status page.
-    if ("cash" in res || "alreadyPaid" in res) {
+    // Already paid retry → straight to the status page.
+    if ("alreadyPaid" in res) {
       clear();
       router.push(`/order/${res.orderId}`);
       return;
@@ -178,28 +175,9 @@ export function CheckoutForm() {
       </section>
     </div>
 
-    {/* Anchored to the bottom of the viewport — payment method and pay button
-        stay reachable without scrolling, however long the order gets. */}
+    {/* Anchored to the bottom of the viewport — pay button stays reachable without scrolling */}
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface px-5 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(8,13,31,0.1)]">
       <div className="mx-auto max-w-lg space-y-3">
-        <section className="rounded-2xl border border-border bg-surface-2/50 p-4">
-          <p className="mb-3 text-sm font-medium text-foreground">Payment</p>
-          <div className="grid grid-cols-2 gap-2">
-            <MethodOption
-              active={method === "upi"}
-              onClick={() => setMethod("upi")}
-              title="UPI"
-              subtitle="Pay now, instantly"
-            />
-            <MethodOption
-              active={method === "cash"}
-              onClick={() => setMethod("cash")}
-              title="Cash"
-              subtitle="Pay at the counter"
-            />
-          </div>
-        </section>
-
         {error && (
           <p role="alert" className="rounded-lg bg-danger-bg px-3 py-2 text-sm text-danger">
             {error}
@@ -207,58 +185,17 @@ export function CheckoutForm() {
         )}
 
         <Button onClick={placeOrder} loading={busy} size="lg" className="w-full">
-          {busy
-            ? "Processing…"
-            : method === "upi"
-              ? `Pay ${formatPaise(subtotalPaise)} with UPI`
-              : `Place order · ${formatPaise(subtotalPaise)} cash`}
+          {busy ? "Processing…" : `Pay ${formatPaise(subtotalPaise)} with UPI`}
         </Button>
-        {method === "upi" ? (
-          <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted">
-            <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-            Secure UPI payment via Cashfree
-          </p>
-        ) : (
-          <p className="text-center text-xs text-muted">
-            Pay in cash at the counter — we&rsquo;ll start your order once it&rsquo;s received.
-          </p>
-        )}
+        <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted">
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+          </svg>
+          Secure UPI payment via Cashfree
+        </p>
       </div>
     </div>
     </>
-  );
-}
-
-function MethodOption({
-  active,
-  onClick,
-  title,
-  subtitle,
-}: {
-  active: boolean;
-  onClick: () => void;
-  title: string;
-  subtitle: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "rounded-xl border px-4 py-3 text-left transition-[transform,background-color,border-color,box-shadow] duration-150 active:scale-[0.98]",
-        active
-          ? "border-primary bg-primary/5 ring-1 ring-primary/30"
-          : "border-border-strong hover:bg-surface-2",
-      )}
-    >
-      <span className="block text-[15px] font-semibold text-foreground">
-        {title}
-      </span>
-      <span className="block text-xs text-muted">{subtitle}</span>
-    </button>
   );
 }
 
