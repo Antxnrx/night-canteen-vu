@@ -10,16 +10,59 @@ import { cn } from "@/lib/cn";
 import type { Sky } from "@/lib/sky-types";
 import type { MenuCategoryWithItems, MenuItem } from "@/lib/menu";
 
-/** Category photo, shown full-bleed in the hero in place of the sky once a category is picked. */
+/** Category photo mapping with aliases and keyword support so images auto-assign cleanly. */
 const CATEGORY_PHOTOS: Record<string, string> = {
+  // Beverages
   beverages: "/beverages.png",
+  beverage: "/beverages.png",
+  drinks: "/beverages.png",
+  drink: "/beverages.png",
+  tea: "/beverages.png",
+  coffee: "/beverages.png",
+  // Maggi
   maggi: "/maggie.png",
+  maggie: "/maggie.png",
+  noodles: "/maggie.png",
+  // Sandwiches
   sandwiches: "/sandwich.png",
+  sandwich: "/sandwich.png",
+  burgers: "/sandwich.png",
+  burger: "/sandwich.png",
+  // Breads / Rolls
   breads: "/bread.png",
+  bread: "/bread.png",
+  buns: "/bread.png",
+  bun: "/bread.png",
+  rolls: "/bread.png",
+  roll: "/bread.png",
+  // Pizzas
   pizzas: "/pizza.png",
+  pizza: "/pizza.png",
+  // Eggs
   eggs: "/egg.png",
+  egg: "/egg.png",
+  omelette: "/egg.png",
+  omelettes: "/egg.png",
+  omlette: "/egg.png",
+  // Fries
   "french fries": "/fries.png",
+  fries: "/fries.png",
+  fry: "/fries.png",
+  snacks: "/fries.png",
+  snack: "/fries.png",
 };
+
+function getCategoryPhoto(name: string): string | undefined {
+  const normalized = name.trim().toLowerCase();
+  if (CATEGORY_PHOTOS[normalized]) return CATEGORY_PHOTOS[normalized];
+  // Fallback: substring matching
+  for (const [key, photo] of Object.entries(CATEGORY_PHOTOS)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return photo;
+    }
+  }
+  return undefined;
+}
 
 /** Native aspect ratio of the category photos above — they're all cropped to the same size. */
 const CATEGORY_PHOTO_ASPECT = { w: 1402, h: 1122 };
@@ -47,7 +90,7 @@ export function MenuBrowser({
       ? categories
       : categories.filter((c) => c.id === selected);
   const categoryPhoto = selectedCategory
-    ? CATEGORY_PHOTOS[selectedCategory.name.toLowerCase()]
+    ? getCategoryPhoto(selectedCategory.name)
     : undefined;
   const heroPhoto =
     selected === "all"
